@@ -167,6 +167,7 @@ impl Rotators {
 
     /// Updates all rotators and accumulators with a new signal sample.
     /// Applies windowing, rotates phasors, and accumulates energy.
+    #[inline(always)]
     fn increment_all(&mut self, signal: f32) {
         // TODO: figure out how to vectorize this
         for i in 0..NUM_ROTATORS {
@@ -191,7 +192,8 @@ impl Rotators {
         }
     }
 
-    fn filter_and_downsample(
+    #[inline(always)]
+    fn filter_and_downsample_inner(
         input: &[f32],
         out: &mut [f32],
         out_shape0: usize,
@@ -360,6 +362,35 @@ impl Rotators {
 
             in_ix += 1;
         }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    fn filter_and_downsample_avx2(
+        input: &[f32],
+        out: &mut [f32],
+        out_shape0: usize,
+        out_stride: usize,
+        downsample: usize,
+    ) {
+        Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample);
+    }
+
+    fn filter_and_downsample(
+        input: &[f32],
+        out: &mut [f32],
+        out_shape0: usize,
+        out_stride: usize,
+        downsample: usize,
+    ) {
+        // Multiversion based on AVX2 support
+        #[cfg(target_arch = "x86_64")]
+        if std::arch::is_x86_feature_detected!("avx2") {
+            return unsafe {
+                Self::filter_and_downsample_avx2(input, out, out_shape0, out_stride, downsample);
+            };
+        }
+        Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample)
     }
 }
 

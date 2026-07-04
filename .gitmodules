@@ -1,0 +1,3 @@
+[submodule "zimtohrli"]
+	path = zimtohrli
+	url = https://github.com/google/zimtohrli

@@ -340,8 +340,12 @@ impl Rotators {
 
             dix += 1;
             if dix == downsample || in_ix + KERNEL_SIZE + 1 == input.len() {
+                // NB: the parentheses around `&mut out[..]` matter: without
+                // them, `try_into` resolves to the by-value `TryFrom<&[f32]>
+                // for [f32; N]` impl and loudness_db mutates a temporary copy
+                // of the row instead of the spectrogram itself.
                 loudness_db(
-                    &mut out[out_stride * out_ix..out_stride * out_ix + NUM_ROTATORS]
+                    (&mut out[out_stride * out_ix..out_stride * out_ix + NUM_ROTATORS])
                         .try_into()
                         .unwrap(),
                 );

@@ -1,0 +1,45 @@
+// Generates the data for pow_pp in src/pow_pp_table.rs:
+//
+//   sollya pow_pp.sollya | python3 pow_pp_to_rs.py > ../crates/zimtohrli/src/pow_pp_table.rs
+//
+// pow_pp computes x^PP for the fixed DTW cost exponent PP by splitting
+// x = 2^k * m with m in [sqrt(0.5), sqrt(2)) and computing
+//
+//   x^PP = 2^(PP*k) * m^PP
+//
+// where 2^(PP*k) is a correctly rounded table over all k reachable from a
+// positive normal x (k in -1022..=1024), and m^PP is a single minimax
+// polynomial in t = m - 1. Tabulating 2^(PP*k) is what the constant exponent
+// buys: it replaces the generic exp2(p * log2 x) pipeline (and its division)
+// with one lookup, and removes the error amplification of p * log2 x at
+// large |log2 x|.
+//
+// Degree choice: the minimax error falls ~2.6 bits per added term with no
+// floor in sight (deg 15: 2^-46, 16: 2^-49, 17: 2^-52, 18: 2^-54, ...), and
+// 17 is the smallest degree at or below 2^-52 = 1 ulp of f64.
+//
+// The t^0 coefficient is constrained to exactly 1 (trailing fpminimax arg)
+// so that pow_pp(1.0) == 1.0.
+
+prec = 512!;
+
+PP = D(0.32264042946823823);
+write("PP ");
+printdouble(PP);
+
+f = (1+x)^PP;
+pad = 2^(-40); // covers the rounding of the reduction cut at sqrt(0.5)
+dom = [sqrt(0.5) - 1 - pad; sqrt(2) - 1 + pad];
+
+deg = 17;
+p = fpminimax(f, [|1,...,deg|], [|D...|], dom, relative, floating, 1);
+write("RELERR 2^(", ceil(log2(dirtyinfnorm(p/f - 1, dom))), ")\n");
+for j from 1 to deg do {
+    write("COEF ");
+    printdouble(coeff(p, j));
+};
+
+for k from -1022 to 1024 do {
+    write("TBL ");
+    printdouble(round(2^(PP * k), D, RN));
+};

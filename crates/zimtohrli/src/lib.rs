@@ -1,10 +1,80 @@
 //! A verbatim port of Google's [Zimtohrli](https://github.com/google/zimtohrli)
 //! library from C++ to Rust.
 
+use libm::{cosf, exp, expf, logf, pow, powf, sinf};
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
 };
+
+mod fast_pow;
+mod pow_pp_table;
+use fast_pow::pow_pp;
+
+/// Specialize a function into multiple microarchitecture-specific versions to
+/// improve performance.
+///
+/// The passed function, and any functions it calls that you want to vectorize,
+/// should have `#[inline(always)]`.
+fn multiversion<R, F: FnOnce() -> R>(func: F) -> R {
+    #[inline(never)]
+    fn doit_baseline<R, F: FnOnce() -> R>(func: F) -> R {
+        func()
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        static ARCH_LEVEL: AtomicUsize = AtomicUsize::new(0);
+
+        #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,f16c,fma,lzcnt,movbe,popcnt,xsave")]
+        fn doit_avx2<R, F: FnOnce() -> R>(func: F) -> R {
+            func()
+        }
+        #[target_feature(enable = "sse4.2,cmpxchg16b,popcnt")]
+        fn doit_sse42<R, F: FnOnce() -> R>(func: F) -> R {
+            func()
+        }
+
+        let arch_level = match ARCH_LEVEL.load(Ordering::Relaxed) {
+            0 => {
+                let level = if std::arch::is_x86_feature_detected!("avx2")
+                    && std::arch::is_x86_feature_detected!("bmi1")
+                    && std::arch::is_x86_feature_detected!("bmi2")
+                    && std::arch::is_x86_feature_detected!("cmpxchg16b")
+                    && std::arch::is_x86_feature_detected!("f16c")
+                    && std::arch::is_x86_feature_detected!("fma")
+                    && std::arch::is_x86_feature_detected!("lzcnt")
+                    && std::arch::is_x86_feature_detected!("movbe")
+                    && std::arch::is_x86_feature_detected!("popcnt")
+                    && std::arch::is_x86_feature_detected!("xsave")
+                {
+                    3
+                } else if std::arch::is_x86_feature_detected!("sse4.2")
+                    && std::arch::is_x86_feature_detected!("cmpxchg16b")
+                    && std::arch::is_x86_feature_detected!("popcnt")
+                {
+                    2
+                } else {
+                    1
+                };
+
+                ARCH_LEVEL.store(level, Ordering::Relaxed);
+                level
+            }
+            level => level,
+        };
+
+        match arch_level {
+            3 => return unsafe { doit_avx2(func) },
+            2 => return unsafe { doit_sse42(func) },
+            _ => {}
+        }
+    }
+
+    doit_baseline(func)
+}
 
 const SAMPLE_RATE: f32 = 48000.0;
 
@@ -67,7 +137,7 @@ fn loudness_db(channels: &mut [f32; NUM_ROTATORS]) {
     ];
     let mut noise = BASE_NOISE;
     for k in 0..NUM_ROTATORS {
-        channels[k] = (channels[k] + noise).ln() * MUL[k];
+        channels[k] = logf(channels[k] + noise) * MUL[k];
         noise += BASE_NOISE_SLOPE[k >> 2];
     }
 }
@@ -107,26 +177,27 @@ fn dot32(a: &[f32; 32], b: &[f32; 32]) -> f32 {
     (sum[0] + sum[1]) + (sum[2] + sum[3])
 }
 
+// Center frequencies of the filter bank, plus one frequency in both ends.
+static FREQ: [f32; NUM_ROTATORS + 2] = [
+    17.858, 24.349, 33.199, 42.359, 51.839, 61.651, 71.805, 82.315, 93.192, 104.449, 116.099,
+    128.157, 140.636, 153.552, 166.919, 180.754, 195.072, 209.890, 225.227, 241.099, 257.527,
+    274.528, 292.124, 310.336, 329.183, 348.690, 368.879, 389.773, 411.398, 433.778, 456.941,
+    480.914, 505.725, 531.403, 557.979, 585.484, 613.950, 643.411, 673.902, 705.459, 738.119,
+    771.921, 806.905, 843.111, 880.584, 919.366, 959.503, 1001.04, 1044.03, 1088.53, 1134.58,
+    1182.24, 1231.57, 1282.62, 1335.46, 1390.14, 1446.73, 1505.31, 1565.93, 1628.67, 1693.60,
+    1760.80, 1830.35, 1902.34, 1976.84, 2053.94, 2133.74, 2216.33, 2301.81, 2390.27, 2481.83,
+    2576.58, 2674.65, 2776.15, 2881.19, 2989.91, 3102.43, 3218.88, 3339.40, 3464.14, 3593.23,
+    3726.84, 3865.12, 4008.23, 4156.35, 4309.64, 4468.30, 4632.49, 4802.43, 4978.31, 5160.34,
+    5348.72, 5543.70, 5745.49, 5954.34, 6170.48, 6394.18, 6625.70, 6865.32, 7113.31, 7369.97,
+    7635.61, 7910.53, 8195.06, 8489.53, 8794.30, 9109.73, 9436.18, 9774.04, 10123.7, 10485.6,
+    10860.1, 11247.8, 11648.9, 12064.2, 12493.9, 12938.7, 13399.0, 13875.3, 14368.4, 14878.7,
+    15406.8, 15953.4, 16519.1, 17104.5, 17710.4, 18337.6, 18986.6, 19658.3, 20352.7,
+];
+
 /// Returns the center frequency in Hz for filter bank channel `i`. The 128
 /// channels are spaced to match human auditory perception, with finer
 /// resolution at lower frequencies.
 fn freq(i: usize) -> f32 {
-    // Center frequencies of the filter bank, plus one frequency in both ends.
-    static FREQ: [f32; NUM_ROTATORS + 2] = [
-        17.858, 24.349, 33.199, 42.359, 51.839, 61.651, 71.805, 82.315, 93.192, 104.449, 116.099,
-        128.157, 140.636, 153.552, 166.919, 180.754, 195.072, 209.890, 225.227, 241.099, 257.527,
-        274.528, 292.124, 310.336, 329.183, 348.690, 368.879, 389.773, 411.398, 433.778, 456.941,
-        480.914, 505.725, 531.403, 557.979, 585.484, 613.950, 643.411, 673.902, 705.459, 738.119,
-        771.921, 806.905, 843.111, 880.584, 919.366, 959.503, 1001.04, 1044.03, 1088.53, 1134.58,
-        1182.24, 1231.57, 1282.62, 1335.46, 1390.14, 1446.73, 1505.31, 1565.93, 1628.67, 1693.60,
-        1760.80, 1830.35, 1902.34, 1976.84, 2053.94, 2133.74, 2216.33, 2301.81, 2390.27, 2481.83,
-        2576.58, 2674.65, 2776.15, 2881.19, 2989.91, 3102.43, 3218.88, 3339.40, 3464.14, 3593.23,
-        3726.84, 3865.12, 4008.23, 4156.35, 4309.64, 4468.30, 4632.49, 4802.43, 4978.31, 5160.34,
-        5348.72, 5543.70, 5745.49, 5954.34, 6170.48, 6394.18, 6625.70, 6865.32, 7113.31, 7369.97,
-        7635.61, 7910.53, 8195.06, 8489.53, 8794.30, 9109.73, 9436.18, 9774.04, 10123.7, 10485.6,
-        10860.1, 11247.8, 11648.9, 12064.2, 12493.9, 12938.7, 13399.0, 13875.3, 14368.4, 14878.7,
-        15406.8, 15953.4, 16519.1, 17104.5, 17710.4, 18337.6, 18986.6, 19658.3, 20352.7,
-    ];
     FREQ[i + 1]
 }
 
@@ -134,7 +205,8 @@ fn freq(i: usize) -> f32 {
 /// geometric mean spacing between adjacent channels.
 fn calculate_bandwidth_in_hz(i: usize) -> f32 {
     // TODO: the C++ version appears to do all math in float precision but returns a double.
-    (freq(i + 1) * freq(i)).sqrt() - (freq(i - 1) * freq(i)).sqrt()
+    // FREQ[i] is freq(i - 1) without the usize underflow at i == 0.
+    (freq(i + 1) * freq(i)).sqrt() - (FREQ[i] * freq(i)).sqrt()
 }
 
 /// Core signal processing engine using rotating phasors (Goertzel-like
@@ -217,12 +289,12 @@ impl Rotators {
         };
         for i in 0..NUM_ROTATORS {
             let bandwidth = calculate_bandwidth_in_hz(i);
-            rotators.window[i] = WINDOW.powf(bandwidth as f64 * BANDWIDTH_MAGIC) as f32;
+            rotators.window[i] = pow(WINDOW, bandwidth as f64 * BANDWIDTH_MAGIC) as f32;
             let window_m1 = 1.0 - rotators.window[i];
             let f = freq(i) * KHZ_TO_RAD;
             rotators.gain[i] = gainer * (window_m1 * window_m1 * window_m1) * freq(i) / bandwidth;
-            rotators.rot[0][i] = f.cos();
-            rotators.rot[1][i] = -f.sin();
+            rotators.rot[0][i] = cosf(f);
+            rotators.rot[1][i] = -sinf(f);
             rotators.rot[2][i] = rotators.gain[i];
             // rotators.rot[3][i] is already 0.0
         }
@@ -236,8 +308,9 @@ impl Rotators {
         let downsample_window = (0..downsample)
             .map(|i| {
                 (1.0 / (1.0
-                    + (8.0246040186567118 * ((2.0 / downsample as f64) * (i as f64 + 0.5) - 1.0))
-                        .exp())) as f32
+                    + exp(
+                        8.0246040186567118 * ((2.0 / downsample as f64) * (i as f64 + 0.5) - 1.0)
+                    ))) as f32
             })
             .collect::<Vec<f32>>();
 
@@ -364,18 +437,6 @@ impl Rotators {
         }
     }
 
-    #[cfg(target_arch = "x86_64")]
-    #[target_feature(enable = "avx2")]
-    fn filter_and_downsample_avx2(
-        input: &[f32],
-        out: &mut [f32],
-        out_shape0: usize,
-        out_stride: usize,
-        downsample: usize,
-    ) {
-        Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample);
-    }
-
     fn filter_and_downsample(
         input: &[f32],
         out: &mut [f32],
@@ -383,14 +444,10 @@ impl Rotators {
         out_stride: usize,
         downsample: usize,
     ) {
-        // Multiversion based on AVX2 support
-        #[cfg(target_arch = "x86_64")]
-        if std::arch::is_x86_feature_detected!("avx2") {
-            return unsafe {
-                Self::filter_and_downsample_avx2(input, out, out_shape0, out_stride, downsample);
-            };
-        }
-        Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample)
+        multiversion(
+            #[inline(always)]
+            || Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample),
+        )
     }
 }
 
@@ -680,12 +737,14 @@ fn nsim<A: Alignment>(
             let std_a_vec = var_a[step_index][channel_index].sqrt();
             let std_b_vec = var_b[step_index][channel_index].sqrt();
             let cov_vec = cov[step_index][channel_index];
-            let intensity = ((2.0 * (mean_a_vec * mean_b_vec).sqrt() + C1)
-                / (mean_a_vec.abs() + mean_b_vec.abs() + C1))
-                .powf(P0);
+            let intensity = powf(
+                (2.0 * (mean_a_vec * mean_b_vec).sqrt() + C1)
+                    / (mean_a_vec.abs() + mean_b_vec.abs() + C1),
+                P0,
+            );
             let structure_base = (cov_vec + C3) / (std_a_vec * std_b_vec + C3);
             let structure_clamped = structure_base.max(C8);
-            let structure = structure_clamped.powf(P1);
+            let structure = powf(structure_clamped, P1);
             let nsim = intensity * structure;
             nsim_accu += nsim as f64;
         }
@@ -812,21 +871,15 @@ fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) ->
     result +=
         ((sums[0] + sums[1]) + (sums[2] + sums[3])) + (sums[4] + sums[5]) + (sums[6] + sums[7]);
 
-    // Bafflingly, the C++ version defines this as a `const float`, reducing
-    // precision for no reason since the calculation is done at double precision
-    // anyway
-    const PP: f64 = 0.32264042946823823;
-    result.powf(PP)
+    // The exponent PP = 0.32264042946823823 is baked into pow_pp (see
+    // fast_pow.rs). Bafflingly, the C++ version defines it as a `const
+    // float`, reducing precision for no reason since the calculation is done
+    // at double precision anyway.
+    pow_pp(result)
 }
 
-// Computes the DTW (https://en.wikipedia.org/wiki/Dynamic_time_warping)
-// between two arrays.
-//
-// If `band_radius` is set, only the Sakoe-Chiba band within that many steps of
-// the corner-to-corner diagonal is explored (see [CostMatrix]). The result is
-// identical to the full DTW whenever the optimal warp path stays inside the
-// band; misalignments larger than the band cannot be recovered.
-fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -> Warped {
+#[inline(always)]
+fn dtw_inner(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -> Warped {
     // Sanity check that both spectrograms have the same number of feature
     // dimensions.
     assert_eq!(spec_a.num_dims, spec_b.num_dims);
@@ -876,6 +929,20 @@ fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -
     }
 
     Warped(result)
+}
+
+// Computes the DTW (https://en.wikipedia.org/wiki/Dynamic_time_warping)
+// between two arrays.
+//
+// If `band_radius` is set, only the Sakoe-Chiba band within that many steps of
+// the corner-to-corner diagonal is explored (see [CostMatrix]). The result is
+// identical to the full DTW whenever the optimal warp path stays inside the
+// band; misalignments larger than the band cannot be recovered.
+fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -> Warped {
+    multiversion(
+        #[inline(always)]
+        || dtw_inner(spec_a, spec_b, band_radius),
+    )
 }
 
 /// Main class for psychoacoustic audio analysis.
@@ -966,8 +1033,8 @@ impl Zimtohrli {
             if max_a > max_b {
                 std::mem::swap(&mut cora, &mut corb);
             }
-            spec_b.rescale((max_a / max_b).powf(cora) as f32);
-            spec_a.rescale((max_b / max_a).powf(corb) as f32);
+            spec_b.rescale(pow(max_a / max_b, cora) as f32);
+            spec_a.rescale(pow(max_b / max_a, corb) as f32);
         }
     }
 
@@ -1023,7 +1090,7 @@ impl Zimtohrli {
         static MOS_PARAMS: [f32; 3] = [1.000e+00, -6.799e-09, 6.487e+01];
 
         fn sigmoid(x: f32) -> f32 {
-            MOS_PARAMS[0] / (MOS_PARAMS[1] + (MOS_PARAMS[2] * x).exp())
+            MOS_PARAMS[0] / (MOS_PARAMS[1] + expf(MOS_PARAMS[2] * x))
         }
 
         let zero_crossing_reciprocal = 1.0 / sigmoid(0.0);

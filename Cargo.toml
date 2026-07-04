@@ -2,4 +2,15 @@
 resolver = "2"
 members = [
     "crates/zimtohrli",
+    "crates/zimtohrli-compare",
 ]
+
+[workspace.dependencies]
+zimtohrli = { path = "crates/zimtohrli" }
+
+anyhow = "1.0.103"
+clap = "4.6.1"
+symphonia = "0.6"
+rubato = "3.0.0"
+audioadapter = "3.0.0"
+audioadapter-buffers = "3.0.0"

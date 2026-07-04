@@ -1,3 +1,6 @@
+//! A verbatim port of Google's [Zimtohrli](https://github.com/google/zimtohrli)
+//! library from C++ to Rust.
+
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
@@ -766,32 +769,26 @@ pub struct Zimtohrli {
     pub nsim_step_window: usize,
     /// The window in channels when computing the NSIM.
     pub nsim_channel_window: usize,
-    /// The clock frequency of the brain?!
-    pub high_gamma_band: f32,
+    pub perceptual_sample_rate: f32,
     /// The reference dB SPL of a sine signal of amplitude 1.
     pub full_scale_sine_db: f32,
 }
 
 impl Default for Zimtohrli {
     fn default() -> Self {
+        let high_gamma_band = 85.0;
+        let samples_per_perceptual_block = (SAMPLE_RATE / high_gamma_band) as usize;
+        let perceptual_sample_rate = SAMPLE_RATE / samples_per_perceptual_block as f32;
         Self {
             nsim_step_window: 8,
             nsim_channel_window: 5,
-            high_gamma_band: 85.0,
+            perceptual_sample_rate,
             full_scale_sine_db: 78.3,
         }
     }
 }
 
 impl Zimtohrli {
-    fn samples_per_perceptual_block(&self) -> usize {
-        (SAMPLE_RATE / self.high_gamma_band) as usize
-    }
-
-    fn perceptual_sample_rate(&self) -> f32 {
-        SAMPLE_RATE / self.samples_per_perceptual_block() as f32
-    }
-
     /// Analyzes an audio signal and fills the provided spectrogram.
     /// signal: input audio samples at 48kHz, range [-1, 1]
     /// spectrogram: pre-allocated output spectrogram to fill
@@ -818,8 +815,7 @@ impl Zimtohrli {
     /// Calculates the number of time steps in the output spectrogram
     /// based on the input signal length and perceptual sample rate.
     pub fn spectrogram_steps(&self, num_samples: usize) -> usize {
-        // TODO: doesn't all of this cancel out?
-        (num_samples as f32 * self.perceptual_sample_rate() / SAMPLE_RATE).ceil() as usize
+        (num_samples as f32 * self.perceptual_sample_rate / SAMPLE_RATE).ceil() as usize
     }
 
     fn rescale_to_match_energy(spec_a: &mut Spectrogram, spec_b: &mut Spectrogram) {
@@ -889,5 +885,19 @@ impl Zimtohrli {
             self.nsim_step_window,
             self.nsim_channel_window,
         )
+    }
+
+    /// Returns a _very approximate_ mean opinion score based on the
+    /// provided Zimtohrli distance.
+    pub fn mos_from_distance(distance: f32) -> f32 {
+        static MOS_PARAMS: [f32; 3] = [1.000e+00, -6.799e-09, 6.487e+01];
+
+        fn sigmoid(x: f32) -> f32 {
+            MOS_PARAMS[0] / (MOS_PARAMS[1] + (MOS_PARAMS[2] * x).exp())
+        }
+
+        let zero_crossing_reciprocal = 1.0 / sigmoid(0.0);
+
+        1.0 + 4.0 * sigmoid(distance) * zero_crossing_reciprocal
     }
 }

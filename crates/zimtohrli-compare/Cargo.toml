@@ -1,0 +1,15 @@
+[package]
+name = "zimtohrli-compare"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow.workspace = true
+audioadapter.workspace = true
+audioadapter-buffers.workspace = true
+clap = { workspace = true, features = ["string"] }
+rubato.workspace = true
+symphonia = { workspace = true, features = ["all-codecs", "all-formats"] }
+zimtohrli.workspace = true
+hound = "3.5.1"

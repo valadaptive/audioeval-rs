@@ -664,33 +664,89 @@ fn nsim<A: Alignment>(
     (nsim_sum / (num_steps * num_channels) as f64).clamp(0.0, 1.0) as f32
 }
 
-/// A simple buffer of double cost values describing the time warp costs between
-/// two spectrograms.
+/// A buffer of double cost values describing the time warp costs between two
+/// spectrograms.
+///
+/// Optionally restricted to a Sakoe-Chiba band around the diagonal: only cells
+/// within `radius` steps of the straight line from (0, 0) to
+/// (steps_a - 1, steps_b - 1) are stored and computed; everything outside is
+/// treated as unreachable (infinite cost). This is not part of the C++
+/// original.
 struct CostMatrix {
-    #[allow(dead_code)]
-    steps_a: usize,
-    steps_b: usize,
+    /// First in-band column of each row (inclusive).
+    row_lo: Vec<usize>,
+    /// Last in-band column of each row (inclusive).
+    row_hi: Vec<usize>,
+    /// Stride between stored rows: the widest row's band width.
+    width: usize,
     values: Vec<f64>,
 }
 
 impl CostMatrix {
-    fn new(steps_a: usize, steps_b: usize) -> Self {
-        let mut values = vec![f64::MAX; steps_a * steps_b];
+    fn new(steps_a: usize, steps_b: usize, band_radius: Option<usize>) -> Self {
+        let (row_lo, row_hi) = match band_radius {
+            None => (vec![0; steps_a], vec![steps_b - 1; steps_a]),
+            Some(radius) => {
+                // The band follows the diagonal connecting the two corners, so
+                // that inputs of different lengths get a straight-line time
+                // mapping plus `radius` steps of allowed drift on both sides.
+                let slope = if steps_a > 1 {
+                    (steps_b - 1) as f64 / (steps_a - 1) as f64
+                } else {
+                    0.0
+                };
+                let mut row_lo = Vec::with_capacity(steps_a);
+                let mut row_hi = Vec::with_capacity(steps_a);
+                for i in 0..steps_a {
+                    let center = i as f64 * slope;
+                    row_lo.push((center.floor() as usize).saturating_sub(radius));
+                    row_hi.push((center.ceil() as usize + radius).min(steps_b - 1));
+                }
+                // Keep every in-band cell connected to its neighbors in the
+                // rows above and below, even when the diagonal is steep
+                // (very different input lengths): the left edge may only
+                // advance by one column per row, and the right edge may not
+                // retreat. Without this, the DP (and the greedy path tracker,
+                // which only moves in +1 steps) could get stranded on a band
+                // edge with no reachable in-band neighbor.
+                for i in 1..steps_a {
+                    row_lo[i] = row_lo[i].min(row_lo[i - 1] + 1);
+                    row_hi[i] = row_hi[i].max(row_hi[i - 1]);
+                }
+                (row_lo, row_hi)
+            }
+        };
+
+        let width = row_lo
+            .iter()
+            .zip(row_hi.iter())
+            .map(|(lo, hi)| hi - lo + 1)
+            .max()
+            .unwrap_or(0);
+        let mut values = vec![f64::MAX; steps_a * width];
+        // row_lo[0] is always 0, so this is cell (0, 0).
         values[0] = 0.0;
 
         Self {
-            steps_a,
-            steps_b,
+            row_lo,
+            row_hi,
+            width,
             values,
         }
     }
 
     fn get(&self, step_a: usize, step_b: usize) -> f64 {
-        self.values[step_a * self.steps_b + step_b]
+        let lo = self.row_lo[step_a];
+        if step_b < lo || step_b > self.row_hi[step_a] {
+            return f64::MAX;
+        }
+        self.values[step_a * self.width + (step_b - lo)]
     }
 
     fn set(&mut self, step_a: usize, step_b: usize, value: f64) {
-        self.values[step_a * self.steps_b + step_b] = value;
+        let lo = self.row_lo[step_a];
+        debug_assert!(step_b >= lo && step_b <= self.row_hi[step_a]);
+        self.values[step_a * self.width + (step_b - lo)] = value;
     }
 }
 
@@ -734,12 +790,17 @@ fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) ->
 
 // Computes the DTW (https://en.wikipedia.org/wiki/Dynamic_time_warping)
 // between two arrays.
-fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram) -> Warped {
+//
+// If `band_radius` is set, only the Sakoe-Chiba band within that many steps of
+// the corner-to-corner diagonal is explored (see [CostMatrix]). The result is
+// identical to the full DTW whenever the optimal warp path stays inside the
+// band; misalignments larger than the band cannot be recovered.
+fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -> Warped {
     // Sanity check that both spectrograms have the same number of feature
     // dimensions.
     assert_eq!(spec_a.num_dims, spec_b.num_dims);
 
-    let mut cost_matrix = CostMatrix::new(spec_a.num_steps, spec_b.num_steps);
+    let mut cost_matrix = CostMatrix::new(spec_a.num_steps, spec_b.num_steps, band_radius);
 
     // Compute cost as cost as weighted sum of feature dimension norms to each
     // cell.
@@ -750,7 +811,9 @@ fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram) -> Warped {
     const MUL_00: f64 = 0.90394786214451761;
 
     for spec_a_index in 1..spec_a.num_steps {
-        for spec_b_index in 1..spec_b.num_steps {
+        let lo = cost_matrix.row_lo[spec_a_index].max(1);
+        let hi = cost_matrix.row_hi[spec_a_index];
+        for spec_b_index in lo..=hi {
             let cost_at_index = delta_norm(spec_a, spec_b, spec_a_index, spec_b_index);
             let sync_cost = cost_matrix.get(spec_a_index - 1, spec_b_index - 1);
             let bwd_cost = cost_matrix.get(spec_a_index - 1, spec_b_index);
@@ -796,6 +859,17 @@ pub struct Zimtohrli {
     pub perceptual_sample_rate: f32,
     /// The reference dB SPL of a sine signal of amplitude 1.
     pub full_scale_sine_db: f32,
+    /// Optional Sakoe-Chiba band radius for the DTW in [Self::distance], in
+    /// perceptual time steps (roughly [Self::perceptual_sample_rate] steps per
+    /// second, ~85 by default).
+    ///
+    /// This is an extension over the C++ original. `None` (the default)
+    /// computes the exact, exhaustive DTW. `Some(radius)` only explores warp
+    /// paths within `radius` steps of the straight-line time mapping between
+    /// the two inputs, reducing processing time considerably. The result is
+    /// identical to the exact DTW as long as the true time misalignment between
+    /// the inputs stays within the band.
+    pub dtw_band_radius: Option<usize>,
 }
 
 impl Default for Zimtohrli {
@@ -808,6 +882,7 @@ impl Default for Zimtohrli {
             nsim_channel_window: 5,
             perceptual_sample_rate,
             full_scale_sine_db: 78.3,
+            dtw_band_radius: None,
         }
     }
 }
@@ -878,7 +953,7 @@ impl Zimtohrli {
         }
 
         Self::rescale_to_match_energy(spec_a, spec_b);
-        let time_pairs = dtw(spec_a, spec_b);
+        let time_pairs = dtw(spec_a, spec_b, self.dtw_band_radius);
         1.0 - nsim(
             spec_a,
             spec_b,

@@ -47,6 +47,16 @@ fn main() -> Result<()> {
                 .value_parser(value_parser!(f32)),
         )
         .arg(
+            Arg::new("dtw_band_seconds")
+                .long("dtw_band_seconds")
+                .help(
+                    "restrict the DTW to time misalignments of at most this many seconds \
+                     (much faster, but results are only reliable if the true misalignment \
+                     stays within it); omit for the exact, exhaustive DTW",
+                )
+                .value_parser(value_parser!(f32)),
+        )
+        .arg(
             Arg::new("verbose")
                 .long("verbose")
                 .short('v')
@@ -112,9 +122,14 @@ fn main() -> Result<()> {
     let audio_a = audio::read_audio_file(path_a, 48000)?;
     print_file_info(&pretty_path_a, &audio_a);
 
+    let dtw_band_radius = matches
+        .get_one::<f32>("dtw_band_seconds")
+        .map(|&seconds| (seconds * perceptual_sample_rate).round() as usize);
+
     let z = Zimtohrli {
         perceptual_sample_rate,
         full_scale_sine_db,
+        dtw_band_radius,
         ..Default::default()
     };
 

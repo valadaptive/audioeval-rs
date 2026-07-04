@@ -702,11 +702,28 @@ fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) ->
     let dims_b = &b[step_b];
     assert_eq!(dims_a.len(), dims_b.len());
 
+    // Multiple accumulators so the f64 sum vectorizes instead of forming one
+    // serial dependency chain. This reorders the additions, but the C++ version
+    // compiles with `-fassociative-math` anyway.
+    const LANES: usize = 8;
+    let mut sums = [0.0f64; LANES];
+    let mut chunks_a = dims_a.chunks_exact(LANES);
+    let mut chunks_b = dims_b.chunks_exact(LANES);
+    for (ca, cb) in (&mut chunks_a).zip(&mut chunks_b) {
+        for i in 0..LANES {
+            let delta = ca[i] - cb[i];
+            sums[i] += (delta * delta) as f64;
+        }
+    }
+
     let mut result = 0.0f64;
-    for (&a, &b) in dims_a.iter().zip(dims_b.iter()) {
+    for (&a, &b) in chunks_a.remainder().iter().zip(chunks_b.remainder().iter()) {
         let delta = a - b;
         result += (delta * delta) as f64;
     }
+
+    result +=
+        ((sums[0] + sums[1]) + (sums[2] + sums[3])) + (sums[4] + sums[5]) + (sums[6] + sums[7]);
 
     // Bafflingly, the C++ version defines this as a `const float`, reducing
     // precision for no reason since the calculation is done at double precision

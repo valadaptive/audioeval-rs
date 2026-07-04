@@ -101,7 +101,7 @@ fn dot32(a: &[f32; 32], b: &[f32; 32]) -> f32 {
     for i in (0..32).step_by(4) {
         sum[0] += a[i] * b[i];
         sum[1] += a[i + 1] * b[i + 1];
-        sum[2] += a[i + 3] * b[i + 2];
+        sum[2] += a[i + 2] * b[i + 2];
         sum[3] += a[i + 3] * b[i + 3];
     }
     (sum[0] + sum[1]) + (sum[2] + sum[3])
@@ -158,8 +158,8 @@ impl Rotators {
     /// Called periodically during signal processing.
     fn occasionally_renormalize(&mut self) {
         for i in 0..NUM_ROTATORS {
-            let norm =
-                self.gain[i] / (self.rot[2][i] * self.rot[2][i] + self.rot[3][i] * self.rot[3][i]);
+            let norm = self.gain[i]
+                / (self.rot[2][i] * self.rot[2][i] + self.rot[3][i] * self.rot[3][i]).sqrt();
             self.rot[2][i] *= norm;
             self.rot[3][i] *= norm;
         }
@@ -320,7 +320,7 @@ impl Rotators {
             let in_slice: &[f32; KERNEL_SIZE] =
                 input[in_ix..in_ix + KERNEL_SIZE].try_into().unwrap();
             rotators.increment_all(
-                resonator.update(dot32(in_slice, &RESO_KERNEL) + dot32(in_slice, &LINEAR_KERNEL)),
+                resonator.update(dot32(in_slice, &RESO_KERNEL)) + dot32(in_slice, &LINEAR_KERNEL),
             );
 
             if out_ix + 1 < out_shape0 {
@@ -390,7 +390,7 @@ impl Spectrogram {
         // TODO: the C++ version does some weird strided thing that just seems totally unnecessary
         self.values
             .iter()
-            .copied()
+            .map(|v| v.abs())
             .reduce(f32::max)
             .unwrap_or_default()
     }
@@ -567,7 +567,7 @@ fn nsim<A: Alignment>(
     }
 
     let step_window = step_window.min(num_steps);
-    let channel_window = channel_window.min(num_steps);
+    let channel_window = channel_window.min(num_channels);
 
     let mean_a = window_mean(
         num_steps,
@@ -641,7 +641,7 @@ fn nsim<A: Alignment>(
         let mut nsim_accu = 0.0f64;
         for channel_index in 0..num_channels {
             let mean_a_vec = mean_a[step_index][channel_index];
-            let mean_b_vec = mean_a[step_index][channel_index];
+            let mean_b_vec = mean_b[step_index][channel_index];
             let std_a_vec = var_a[step_index][channel_index].sqrt();
             let std_b_vec = var_b[step_index][channel_index].sqrt();
             let cov_vec = cov[step_index][channel_index];
@@ -704,6 +704,9 @@ fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) ->
         result += (delta * delta) as f64;
     }
 
+    // Bafflingly, the C++ version defines this as a `const float`, reducing
+    // precision for no reason since the calculation is done at double precision
+    // anyway
     const PP: f64 = 0.32264042946823823;
     result.powf(PP)
 }
@@ -821,8 +824,8 @@ impl Zimtohrli {
     fn rescale_to_match_energy(spec_a: &mut Spectrogram, spec_b: &mut Spectrogram) {
         assert_eq!(spec_a.num_dims, spec_b.num_dims);
 
-        let max_a = spec_a.max();
-        let max_b = spec_b.max();
+        let max_a = spec_a.max() as f64;
+        let max_b = spec_b.max() as f64;
         if max_a != max_b && max_a > 0.0 && max_b > 0.0 {
             // For full correction cora + corb would be 1.0. It is very much
             // unclear why optimization prefers to have overcorrection for
@@ -836,8 +839,8 @@ impl Zimtohrli {
             if max_a > max_b {
                 std::mem::swap(&mut cora, &mut corb);
             }
-            spec_a.rescale((max_a / max_b).powf(cora));
-            spec_b.rescale((max_b / max_a).powf(corb));
+            spec_b.rescale((max_a / max_b).powf(cora) as f32);
+            spec_a.rescale((max_b / max_a).powf(corb) as f32);
         }
     }
 

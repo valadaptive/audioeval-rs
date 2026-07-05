@@ -2,6 +2,8 @@
 //! Patterson-Holdsworth Cochlear Filter Bank", a port of
 //! `equivalent_rectangular_bandwidth.cc`.
 
+use std::f64::consts::PI;
+
 use num_complex::Complex64;
 
 pub struct ErbFilters {
@@ -31,16 +33,16 @@ pub fn make_filters(
     let mut coeffs = Vec::with_capacity(num_channels);
     for &cf_i in &cf {
         let erb = ((cf_i / EAR_Q).powf(order) + MIN_BW.powf(order)).powf(1.0 / order);
-        let b = 1.019 * 2.0 * std::f64::consts::PI * erb;
+        let b = 1.019 * 2.0 * PI * erb;
         let exp_bt = (b * t).exp();
 
-        let b1 = -2.0 * (2.0 * cf_i * std::f64::consts::PI * t).cos() / exp_bt;
+        let b1 = -2.0 * (2.0 * cf_i * PI * t).cos() / exp_bt;
         let b2 = (-2.0 * b * t).exp();
 
-        let sin_t = (cf_i * 2.0 * std::f64::consts::PI * t).sin() * t;
+        let sin_t = (cf_i * 2.0 * PI * t).sin() * t;
         let b_pos = sin_t * 2.0 * (3.0 + 2f64.powf(1.5)).sqrt();
         let b_neg = sin_t * 2.0 * (3.0 - 2f64.powf(1.5)).sqrt();
-        let a = (cf_i * 2.0 * std::f64::consts::PI * t).cos() * 2.0 * t;
+        let a = (cf_i * 2.0 * PI * t).cos() * 2.0 * t;
         let a11 = -(a / exp_bt + b_pos / exp_bt) / 2.0;
         let a12 = -(a / exp_bt - b_pos / exp_bt) / 2.0;
         let a13 = -(a / exp_bt + b_neg / exp_bt) / 2.0;
@@ -51,10 +53,10 @@ pub fn make_filters(
         let p1 = 2f64.powf(1.5);
         let s1 = (3.0 - p1).sqrt();
         let s2 = (3.0 + p1).sqrt();
-        let two_pi_cf_t = 2.0 * cf_i * std::f64::consts::PI * t;
-        let x_exp = (4.0 * i * cf_i * std::f64::consts::PI * t).exp();
+        let two_pi_cf_t = 2.0 * cf_i * PI * t;
+        let x_exp = (4.0 * i * cf_i * PI * t).exp();
         let x01 = -2.0 * x_exp * t;
-        let x02 = 2.0 * (-(b * t) + 2.0 * i * cf_i * std::f64::consts::PI * t).exp() * t;
+        let x02 = 2.0 * (-(b * t) + 2.0 * i * cf_i * PI * t).exp() * t;
         let x_cos = two_pi_cf_t.cos();
         let x_sin = two_pi_cf_t.sin();
 

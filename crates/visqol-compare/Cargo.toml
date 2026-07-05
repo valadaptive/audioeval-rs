@@ -1,5 +1,5 @@
 [package]
-name = "zimtohrli-compare"
+name = "visqol-compare"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -7,5 +7,5 @@ license = "Apache-2.0"
 [dependencies]
 anyhow.workspace = true
 audio-io.workspace = true
-clap = { workspace = true, features = ["string"] }
-zimtohrli.workspace = true
+clap.workspace = true
+visqol.workspace = true

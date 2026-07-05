@@ -2,6 +2,7 @@
 //! library from C++ to Rust.
 
 use libm::{cosf, exp, expf, logf, pow, powf, sinf};
+use multiversion::multiversion;
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
@@ -10,71 +11,6 @@ use std::{
 mod fast_pow;
 mod pow_pp_table;
 use fast_pow::pow_pp;
-
-/// Specialize a function into multiple microarchitecture-specific versions to
-/// improve performance.
-///
-/// The passed function, and any functions it calls that you want to vectorize,
-/// should have `#[inline(always)]`.
-fn multiversion<R, F: FnOnce() -> R>(func: F) -> R {
-    #[inline(never)]
-    fn doit_baseline<R, F: FnOnce() -> R>(func: F) -> R {
-        func()
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        static ARCH_LEVEL: AtomicUsize = AtomicUsize::new(0);
-
-        #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,f16c,fma,lzcnt,movbe,popcnt,xsave")]
-        fn doit_avx2<R, F: FnOnce() -> R>(func: F) -> R {
-            func()
-        }
-        #[target_feature(enable = "sse4.2,cmpxchg16b,popcnt")]
-        fn doit_sse42<R, F: FnOnce() -> R>(func: F) -> R {
-            func()
-        }
-
-        let arch_level = match ARCH_LEVEL.load(Ordering::Relaxed) {
-            0 => {
-                let level = if std::arch::is_x86_feature_detected!("avx2")
-                    && std::arch::is_x86_feature_detected!("bmi1")
-                    && std::arch::is_x86_feature_detected!("bmi2")
-                    && std::arch::is_x86_feature_detected!("cmpxchg16b")
-                    && std::arch::is_x86_feature_detected!("f16c")
-                    && std::arch::is_x86_feature_detected!("fma")
-                    && std::arch::is_x86_feature_detected!("lzcnt")
-                    && std::arch::is_x86_feature_detected!("movbe")
-                    && std::arch::is_x86_feature_detected!("popcnt")
-                    && std::arch::is_x86_feature_detected!("xsave")
-                {
-                    3
-                } else if std::arch::is_x86_feature_detected!("sse4.2")
-                    && std::arch::is_x86_feature_detected!("cmpxchg16b")
-                    && std::arch::is_x86_feature_detected!("popcnt")
-                {
-                    2
-                } else {
-                    1
-                };
-
-                ARCH_LEVEL.store(level, Ordering::Relaxed);
-                level
-            }
-            level => level,
-        };
-
-        match arch_level {
-            3 => return unsafe { doit_avx2(func) },
-            2 => return unsafe { doit_sse42(func) },
-            _ => {}
-        }
-    }
-
-    doit_baseline(func)
-}
 
 const SAMPLE_RATE: f32 = 48000.0;
 

@@ -1,12 +1,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
+use audio_io::AudioFile;
 use clap::{Arg, ArgAction, Command, value_parser};
 use zimtohrli::{Spectrogram, Zimtohrli};
-
-use crate::audio::AudioFile;
-
-mod audio;
 
 fn main() -> Result<()> {
     let default_zimtohrli = zimtohrli::Zimtohrli::default();
@@ -119,7 +116,7 @@ fn main() -> Result<()> {
         println!("Loaded {pretty_path} ({src_sample_rate}Hz, {num_channels}ch, codec ID {format})");
     };
 
-    let audio_a = audio::read_audio_file(path_a, 48000)?;
+    let audio_a = audio_io::read_audio_file(path_a, 48000)?;
     print_file_info(&pretty_path_a, &audio_a);
 
     let dtw_band_radius = matches
@@ -141,7 +138,7 @@ fn main() -> Result<()> {
 
     for path in path_b {
         let pretty_path_b = path.to_string_lossy();
-        let audio_b = audio::read_audio_file(path, 48000)?;
+        let audio_b = audio_io::read_audio_file(path, 48000)?;
         print_file_info(&pretty_path_b, &audio_b);
 
         let mut sum_of_squares = 0.0f32;

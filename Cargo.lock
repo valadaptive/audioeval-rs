@@ -65,6 +65,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93ebbf82d06013f4c41fe71303feb980cddd78496d904d06be627972de51a24"
 
 [[package]]
+name = "audio-io"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "audioadapter-buffers",
+ "rubato",
+ "symphonia",
+]
+
+[[package]]
 name = "audioadapter"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -153,12 +163,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
-name = "hound"
-version = "3.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -181,6 +185,10 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+
+[[package]]
+name = "multiversion"
+version = "0.1.0"
 
 [[package]]
 name = "num-complex"
@@ -548,6 +556,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "visqol"
+version = "0.1.0"
+dependencies = [
+ "audio-io",
+ "multiversion",
+ "num-complex",
+ "realfft",
+]
+
+[[package]]
+name = "visqol-compare"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "audio-io",
+ "clap",
+ "visqol",
+]
+
+[[package]]
 name = "windowfunctions"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -576,6 +604,7 @@ name = "zimtohrli"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "multiversion",
 ]
 
 [[package]]
@@ -583,11 +612,7 @@ name = "zimtohrli-compare"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "audioadapter",
- "audioadapter-buffers",
+ "audio-io",
  "clap",
- "hound",
- "rubato",
- "symphonia",
  "zimtohrli",
 ]

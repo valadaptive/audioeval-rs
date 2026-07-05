@@ -1,3 +1,6 @@
 [submodule "zimtohrli"]
 	path = zimtohrli
 	url = https://github.com/google/zimtohrli
+[submodule "visqol"]
+	path = visqol
+	url = https://github.com/google/visqol

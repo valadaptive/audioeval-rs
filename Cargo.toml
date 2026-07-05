@@ -1,11 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/audio-io",
+    "crates/multiversion",
+    "crates/visqol",
+    "crates/visqol-compare",
     "crates/zimtohrli",
     "crates/zimtohrli-compare",
 ]
 
 [workspace.dependencies]
+audio-io = { path = "crates/audio-io" }
+multiversion = { path = "crates/multiversion" }
+visqol = { path = "crates/visqol" }
 zimtohrli = { path = "crates/zimtohrli" }
 
 anyhow = "1.0.103"
@@ -15,6 +22,17 @@ rubato = "3.0.0"
 audioadapter = "3.0.0"
 audioadapter-buffers = "3.0.0"
 libm = "0.2.16"
+num-complex = "0.4"
+realfft = "3.5"
 
 [profile.release]
 debug = "full"
+
+# The visqol conformance tests process tens of seconds of audio; keep the DSP
+# optimized even in dev/test builds.
+[profile.dev.package.visqol]
+opt-level = 2
+[profile.dev.package.realfft]
+opt-level = 2
+[profile.dev.package.rustfft]
+opt-level = 2

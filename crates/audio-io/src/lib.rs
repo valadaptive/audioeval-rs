@@ -1,3 +1,8 @@
+//! Shared audio decoding and resampling for the audioeval metrics.
+//!
+//! Decodes any format supported by symphonia into planar `f32` channels,
+//! resampling to the requested rate with rubato when necessary.
+
 use std::{fs::File, path::Path};
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -17,7 +22,12 @@ pub struct AudioFile {
 }
 
 pub fn read_audio_file(path: &Path, rate: usize) -> Result<AudioFile> {
-    read_audio_file_inner(path, rate).with_context(|| format!("Error when reading {path:?}"))
+    read_audio_file_inner(path, Some(rate)).with_context(|| format!("Error when reading {path:?}"))
+}
+
+/// Reads an audio file at its native sample rate, without resampling.
+pub fn read_audio_file_native(path: &Path) -> Result<AudioFile> {
+    read_audio_file_inner(path, None).with_context(|| format!("Error when reading {path:?}"))
 }
 
 fn append_planar_f32<S>(buf: &AudioBuffer<S>, out: &mut [Vec<f32>])
@@ -50,7 +60,7 @@ fn append_decoded(decoded: &GenericAudioBufferRef<'_>, out: &mut [Vec<f32>]) -> 
     Ok(())
 }
 
-fn read_audio_file_inner(path: &Path, rate: usize) -> Result<AudioFile> {
+fn read_audio_file_inner(path: &Path, rate: Option<usize>) -> Result<AudioFile> {
     let file = File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
@@ -92,6 +102,7 @@ fn read_audio_file_inner(path: &Path, rate: usize) -> Result<AudioFile> {
     };
     let out = &mut out_file.channels;
 
+    let rate = rate.unwrap_or(src_rate);
     if src_rate == rate {
         loop {
             let packet = match format.next_packet() {

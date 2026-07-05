@@ -1,0 +1,13 @@
+[package]
+name = "visqol"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+multiversion.workspace = true
+num-complex.workspace = true
+realfft.workspace = true
+
+[dev-dependencies]
+audio-io.workspace = true

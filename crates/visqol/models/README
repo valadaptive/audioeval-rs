@@ -1,0 +1,3 @@
+libsvm_nu_svr_model.txt is the default audio-mode similarity-to-quality model,
+copied unmodified from https://github.com/google/visqol (model/libsvm_nu_svr_model.txt,
+Apache-2.0).

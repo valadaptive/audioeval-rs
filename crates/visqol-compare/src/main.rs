@@ -34,6 +34,20 @@ fn main() -> Result<()> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("use_lattice_model")
+                .long("use_lattice_model")
+                .help(
+                    "in speech mode, use a deep lattice network model to map \
+                     similarity to quality (more accurate); pass \
+                     --use_lattice_model=false for the exponential fit",
+                )
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_value("true")
+                .default_missing_value("true")
+                .value_parser(value_parser!(bool)),
+        )
+        .arg(
             Arg::new("use_unscaled_speech_mos_mapping")
                 .long("use_unscaled_speech_mos_mapping")
                 .help(
@@ -88,7 +102,11 @@ fn main() -> Result<()> {
     let verbose = matches.get_flag("verbose");
 
     let mut visqol = if speech_mode {
-        Visqol::speech(!matches.get_flag("use_unscaled_speech_mos_mapping"))
+        if *matches.get_one::<bool>("use_lattice_model").unwrap() {
+            Visqol::speech_lattice()
+        } else {
+            Visqol::speech(!matches.get_flag("use_unscaled_speech_mos_mapping"))
+        }
     } else {
         match matches.get_one::<PathBuf>("similarity_to_quality_model") {
             Some(path) => {

@@ -12,8 +12,9 @@
 //!
 //! Differences from the C++ implementation:
 //! - FFTs (used for alignment) run in f64 rather than pffft's f32.
-//! - The TensorFlow-Lite "lattice" speech-mode mapper is not ported; speech
-//!   mode always uses the default exponential NSIM-to-MOS fit.
+//! - The TensorFlow-Lite "lattice" speech-mode mapper is evaluated natively
+//!   from its extracted parameters (see [`lattice`](crate::LatticeModel))
+//!   rather than through a TFLite runtime.
 //!
 //! ```no_run
 //! use visqol::{AudioSignal, Visqol};
@@ -31,6 +32,7 @@ mod envelope;
 mod erb;
 mod fft;
 mod gammatone;
+mod lattice;
 mod matrix;
 mod nsim;
 mod patches;
@@ -40,6 +42,7 @@ mod svr;
 mod xcorr;
 
 pub use audio_signal::AudioSignal;
+pub use lattice::LatticeModel;
 pub use nsim::PatchSimilarityResult;
 pub use svr::{SimilarityToQualityMapper, SvrModel};
 
@@ -162,8 +165,21 @@ impl Visqol {
         }
     }
 
+    /// Speech mode (16 kHz input expected) with the deep lattice network
+    /// NSIM-to-MOS mapping, the C++ default (`--use_lattice_model`).
+    pub fn speech_lattice() -> Self {
+        Visqol {
+            mapper: SimilarityToQualityMapper::Lattice(LatticeModel::default_speech_model()),
+            speech_mode: true,
+            search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
+            disable_global_alignment: false,
+            disable_realignment: false,
+        }
+    }
+
     /// Speech mode (16 kHz input expected): voice-activity-gated patches and
-    /// the exponential NSIM-to-MOS mapping. `scale_to_max_mos` rescales the
+    /// the exponential NSIM-to-MOS mapping (the C++ behavior with
+    /// `--use_lattice_model=false`). `scale_to_max_mos` rescales the
     /// fit so that a perfect NSIM maps to a MOS of 5.0 rather than ~4.x
     /// (enabled in the C++ unless `--use_unscaled_speech_mos_mapping`).
     pub fn speech(scale_to_max_mos: bool) -> Self {
@@ -295,7 +311,9 @@ impl Visqol {
 
         let fstdnsim = calc_pooled_freq_band_std_devs(&sim_match_info, &fvnsim, frame_duration);
 
-        let mut moslqo = self.mapper.predict_quality(&fvnsim);
+        let mut moslqo = self
+            .mapper
+            .predict_quality(&fvnsim, &fvnsim10, &fstdnsim, &fvdegenergy);
         let vnsim = fvnsim.iter().sum::<f64>() / fvnsim.len() as f64;
 
         // Stop totally dissimilar signals from getting a good score: the

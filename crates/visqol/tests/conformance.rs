@@ -158,6 +158,46 @@ fn guitar_short_reference_patch() {
 }
 
 #[test]
+fn speech_ca01_transcoded_lattice() {
+    assert_moslqo(
+        &Visqol::speech_lattice(),
+        "clean_speech/CA01_01.wav",
+        "clean_speech/transcoded_CA01_01.wav",
+        3.3129234313964844,
+    );
+}
+
+#[test]
+fn speech_ca01_perfect_score_lattice() {
+    assert_moslqo(
+        &Visqol::speech_lattice(),
+        "clean_speech/CA01_01.wav",
+        "clean_speech/CA01_01.wav",
+        4.505550384521484,
+    );
+}
+
+#[test]
+fn different_audios_lattice() {
+    assert_moslqo(
+        &Visqol::speech_lattice(),
+        "conformance_testdata_subset/guitar48_stereo.wav",
+        "clean_speech/CA01_01.wav",
+        1.4982070922851562,
+    );
+}
+
+#[test]
+fn bad_degraded_lattice() {
+    assert_moslqo(
+        &Visqol::speech_lattice(),
+        "alignment/reference.wav",
+        "alignment/degraded.wav",
+        1.19293212890625,
+    );
+}
+
+#[test]
 fn speech_ca01_transcoded_exponential() {
     assert_moslqo(
         &Visqol::speech(true),

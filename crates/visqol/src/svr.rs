@@ -116,14 +116,26 @@ impl SvrModel {
 pub enum SimilarityToQualityMapper {
     /// Audio mode: nu-SVR over the per-band mean similarities.
     Svr(SvrModel),
-    /// Speech mode: exponential fit of mean NSIM over the TCD-VOIP dataset.
+    /// Speech mode default: deep lattice network over all per-band features.
+    Lattice(crate::lattice::LatticeModel),
+    /// Speech mode with `--use_lattice_model=false`: exponential fit of mean
+    /// NSIM over the TCD-VOIP dataset.
     SpeechExponential { scale_to_max_mos: bool },
 }
 
 impl SimilarityToQualityMapper {
-    pub fn predict_quality(&self, fvnsim: &[f64]) -> f64 {
+    pub fn predict_quality(
+        &self,
+        fvnsim: &[f64],
+        fvnsim10: &[f64],
+        fstdnsim: &[f64],
+        fvdegenergy: &[f64],
+    ) -> f64 {
         match self {
             SimilarityToQualityMapper::Svr(model) => model.predict(fvnsim).clamp(1.0, 5.0),
+            SimilarityToQualityMapper::Lattice(model) => {
+                model.predict(fvnsim, fvnsim10, fstdnsim, fvdegenergy)
+            }
             SimilarityToQualityMapper::SpeechExponential { scale_to_max_mos } => {
                 const FIT_PARAMETER_A: f64 = -262.847869;
                 const FIT_PARAMETER_B: f64 = 0.0154302525;

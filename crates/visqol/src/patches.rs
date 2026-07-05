@@ -90,8 +90,8 @@ fn get_voice_activity(
 
     let mut frame = Vec::with_capacity(frame_len);
     for &value in patch {
-        // Truncating cast after clamping, as in the C++.
-        let scaled = (value * 32768.0).clamp(-32768.0, 32767.0) as i16;
+        // Saturating cast to i16.
+        let scaled = (value * 32768.0) as i16;
         frame.push(scaled);
         if frame.len() == frame_len {
             vad.process_chunk(&frame);

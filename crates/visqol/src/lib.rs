@@ -29,7 +29,6 @@ mod alignment;
 mod analysis_window;
 mod audio_signal;
 mod erb;
-mod fft;
 mod gammatone;
 mod lattice;
 mod matrix;

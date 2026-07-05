@@ -1,17 +1,40 @@
 //! Global signal alignment, a port of `alignment.cc`, `envelope.cc`, and `xcorr.cc`.
 
+use std::cell::RefCell;
+
+use realfft::RealFftPlanner;
+
 use crate::audio_signal::AudioSignal;
-use crate::fft;
+
+/// FFT sizes are powers of two with a floor of 32, matching the C++
+/// `FftManager`. The C++ runs pffft in single precision; we use `realfft` in
+/// double precision, which only affects results below the f32 noise floor.
+const MIN_FFT_SIZE: usize = 32;
+
+// The planner caches plans (twiddle tables) by size; keep one per thread so
+// the many small per-patch FFTs during fine realignment don't re-plan.
+thread_local! {
+    static PLANNER: RefCell<RealFftPlanner<f64>> = RefCell::new(RealFftPlanner::new());
+}
 
 /// Upper-envelope calculation via the Hilbert transform.
 fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
     let n = signal.len();
     assert!(n > 0, "cannot compute envelope of empty signal");
     let mean = signal.iter().sum::<f64>() / n as f64;
-    let centered: Vec<f64> = signal.iter().map(|&s| s - mean).collect();
 
-    let mut spectrum = fft::rfft(&centered);
-    let fft_size = 2 * (spectrum.len() - 1);
+    let fft_size = n.next_power_of_two().max(MIN_FFT_SIZE);
+    let (r2c, c2r) =
+        PLANNER.with_borrow_mut(|p| (p.plan_fft_forward(fft_size), p.plan_fft_inverse(fft_size)));
+
+    // Mean-centered signal, zero-padded to the FFT size.
+    let mut time = vec![0.0; fft_size];
+    for (t, &s) in time.iter_mut().zip(signal) {
+        *t = s - mean;
+    }
+    let mut spectrum = r2c.make_output_vec();
+    r2c.process(&mut time, &mut spectrum)
+        .expect("buffer sizes are correct by construction");
 
     // The C++ version has a quirk that we reproduce faithfully: the analytic
     // signal's one-sided scaling vector is built with indices based on the
@@ -31,9 +54,12 @@ fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
 
     // The C++ takes the real IFFT of this spectrum (discarding the mirror
     // half), so the "analytic signal" is real-valued and the envelope is the
-    // absolute value of that real signal.
-    let time = fft::irfft(&mut spectrum);
-    time[..n].iter().map(|&v| v.abs() + mean).collect()
+    // absolute value of that real signal. The C++ inverse scales by
+    // 1/fft_size.
+    c2r.process(&mut spectrum, &mut time)
+        .expect("buffer sizes are correct by construction");
+    let inv = 1.0 / fft_size as f64;
+    time[..n].iter().map(|&v| (v * inv).abs() + mean).collect()
 }
 
 /// Returns the lag (in samples) at which `signal_2` best aligns to
@@ -43,23 +69,33 @@ fn find_lowest_lag_index(signal_1: &[f64], signal_2: &[f64]) -> i64 {
     let max_lag = longest - 1;
 
     // Linear correlation of two length-`longest` signals needs
-    // `2 * longest - 1` points; zero-extend both inputs so `rfft` picks the
-    // covering power of two (the C++ derives the same count with
+    // `2 * longest - 1` points (the C++ derives the same count with
     // frexp(2 * len - 1)).
-    let padded_len = 2 * longest - 1;
-    let mut padded_1 = signal_1.to_vec();
-    padded_1.resize(padded_len, 0.0);
-    let mut padded_2 = signal_2.to_vec();
-    padded_2.resize(padded_len, 0.0);
+    let fft_size = (2 * longest - 1).next_power_of_two().max(MIN_FFT_SIZE);
+    let (r2c, c2r) =
+        PLANNER.with_borrow_mut(|p| (p.plan_fft_forward(fft_size), p.plan_fft_inverse(fft_size)));
 
-    let spec_1 = fft::rfft(&padded_1);
-    let spec_2 = fft::rfft(&padded_2);
-    let mut product: Vec<fft::Complex> = spec_1
-        .iter()
-        .zip(&spec_2)
-        .map(|(a, b)| a * b.conj())
-        .collect();
-    let corr = fft::irfft(&mut product);
+    // One zero-padded input buffer, refilled for the second transform
+    // (`process` uses it as scratch).
+    let mut buf = vec![0.0; fft_size];
+    buf[..signal_1.len()].copy_from_slice(signal_1);
+    let mut spec_1 = r2c.make_output_vec();
+    r2c.process(&mut buf, &mut spec_1)
+        .expect("buffer sizes are correct by construction");
+    buf.fill(0.0);
+    buf[..signal_2.len()].copy_from_slice(signal_2);
+    let mut spec_2 = r2c.make_output_vec();
+    r2c.process(&mut buf, &mut spec_2)
+        .expect("buffer sizes are correct by construction");
+
+    for (a, b) in spec_1.iter_mut().zip(&spec_2) {
+        *a *= b.conj();
+    }
+    // The C++ scales the inverse by 1/fft_size; an exact power of two, so
+    // omitting it cannot change which lag wins the maximum below.
+    c2r.process(&mut spec_1, &mut buf)
+        .expect("buffer sizes are correct by construction");
+    let corr = buf;
 
     // The wrapped negative lags sit at the end of the circular correlation,
     // followed (from the front) by the non-negative lags.

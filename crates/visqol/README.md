@@ -1,8 +1,6 @@
 # visqol
 
-A pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3 (conformance
-version 333), an objective, full-reference metric for perceived audio quality,
-with no Bazel, protobuf, or TensorFlow dependencies.
+A pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3, an objective, full-reference metric for perceived audio quality.
 
 ```rust
 use visqol::{AudioSignal, Visqol};
@@ -13,35 +11,19 @@ let result = Visqol::audio().run(&reference, &degraded)?;
 println!("MOS-LQO: {}", result.moslqo);
 ```
 
-Use `Visqol::audio()` for general audio (expects 48 kHz input) and
-`Visqol::speech_lattice()` for speech (expects 16 kHz input) — the deep
-lattice network mapping, upstream's speech default. `Visqol::speech(true)`
-selects the older exponential NSIM-to-MOS fit (upstream's
-`--use_lattice_model=false`). Inputs are mono; `AudioSignal::from_channels`
-downmixes by averaging, matching the C++.
+The entry points you're most likely to want are:
+- `Visqol::audio()`: for general audio (ViSQOL's default behavior). This expects 48kHz input.
+- `Visqol::speech_lattice()`: for speech (like ViSQOL with `use_speech_scoring` enabled). This expects 16kHz input.
+- `Visqol::speech_legacy()`: for speech, using the older non-lattice model (like ViSQOL with `use_speech_scoring` enabled, but `use_lattice_model` explicitly disabled). This also expects 16kHz input.
+
+The inputs are expected to be mono signals. You may use `AudioSignal::from_channels` to downmix by averaging, as with the C++ version.
+
+This crate will *not* resample your audio for you. You must use something like [rubato](https://crates.io/crates/rubato) to resample the input before passing it in.
 
 ## Conformance
 
-`tests/conformance.rs` reproduces the entire upstream conformance suite using
-the testdata from the `visqol` git submodule. SVR- and exponential-mapped
-scores match the C++ implementation's pinned values to ~13 significant digits;
-lattice-mapped scores match to ~6 significant digits (the C++ runs the lattice
-model in f32 under XNNPack, whose SIMD summation order can't be reproduced
-exactly). Both are far inside upstream's own 1e-4 conformance tolerance.
+This crate's results are compared against the upstream conformance test suite. We test against [conformance version 333](https://github.com/google/visqol/blob/38d0b01/src/include/conformance.h#L30).
 
-## Differences from the C++ implementation
+The audio and non-lattice speech models match the original C++ implementation to ~13 significant digits. The lattice speech model's scores match to ~6 significant digits. This is well within the [upstream conformance tolerance of 1e-4](https://github.com/google/visqol/blob/38d0b01/python/visqol_lib_py_test.py#L20).
 
-- The audio-mode SVR mapper reimplements libsvm nu-SVR RBF *inference* only,
-  and embeds the default model (`models/libsvm_nu_svr_model.txt`, copied
-  unmodified from upstream).
-- The speech-mode lattice mapper evaluates the calibrated-lattice-ensemble
-  directly from parameters extracted out of the upstream TFLite flatbuffer
-  (`models/lattice_speech_model.bin`, see `models/extract_lattice_model.py`),
-  instead of depending on a TFLite runtime. Training-time quirks are
-  reproduced, including the missing-value sentinels that fire on an fvnsim of
-  exactly 0.7 or an fvnsim10 of exactly 0.5 (as f32).
-- Some C++ quirks are reproduced deliberately for conformance (grep the
-  sources for "C++"): the Hilbert-envelope scaling built from the unpadded
-  signal length, silence padding prepended rather than appended when slicing
-  patch audio, and the unsigned-wrapping patch-count check that rejects
-  single-patch signals.
+Results will likely not be *bit-identical* across machines due to potential rounding differences in libm functions, runtime FFT kernel decisions, and other factors outside this library's control. They are, however, expected to land well within the conformance tests' tolerance.

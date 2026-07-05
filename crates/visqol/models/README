@@ -6,7 +6,5 @@ lattice_speech_model.bin holds the parameters of the default speech-mode
 similarity-to-quality model (a TensorFlow Lattice calibrated lattice ensemble),
 extracted verbatim from the upstream TFLite flatbuffer
 (model/lattice_tcditugenmeetpackhref_ls2_nl60_lr12_bs2048_learn.005_ep2400_train1_7_raw.tflite,
-Apache-2.0) by extract_lattice_model.py. The extraction is lossless: every
-weight is the original f32 bit pattern, and the graph structure is
-assert-checked op by op rather than assumed. See src/lattice.rs for the
+Apache-2.0) by extract_lattice_model.py. See src/lattice.rs for the
 format and the inference semantics.

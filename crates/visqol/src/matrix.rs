@@ -1,5 +1,4 @@
-//! Minimal column-major matrix of `f64`, mirroring the Armadillo-backed
-//! `AMatrix` in the C++ implementation. Column-major layout matters: the
+//! Minimal column-major matrix of `f64`, Column-major layout matters: the
 //! 2D convolution in the NSIM measure indexes the underlying buffer flat,
 //! and spectrogram frames (columns) stay contiguous.
 

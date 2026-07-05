@@ -1,25 +1,25 @@
-//! The default speech-mode similarity-to-quality mapper: a TensorFlow
-//! Lattice "calibrated lattice ensemble", evaluated directly from the
-//! parameters extracted out of the upstream TFLite flatbuffer (see
+//! The default speech-mode similarity-to-quality mapper: a TensorFlow Lattice
+//! "calibrated lattice ensemble", evaluated directly from the parameters
+//! extracted out of the upstream TFLite flatbuffer (see
 //! `models/extract_lattice_model.py`).
 //!
-//! Structure, mirroring the TFLite graph op for op:
+//! The code's structure models/hardcodes the TFLite graph:
 //!
-//! 1. Each of the 85 scalar inputs (fvnsim, fvnsim10, fstdnsim, fvdegenergy
-//!    per band, plus the quantile parameter tau, fixed at 0.5) runs through a
-//!    piecewise-linear calibrator producing one value per lattice that
-//!    consumes the feature. fvnsim/fvnsim10 calibrators have a missing-value
-//!    branch keyed on *exact f32 equality* with a training-time sentinel
-//!    (0.7 and 0.5 respectively) — an upstream quirk reproduced faithfully.
+//! 1. Each of the 85 scalar inputs (fvnsim, fvnsim10, fstdnsim, fvdegenergy per
+//!    band, plus the quantile parameter tau, fixed at 0.5) runs through a
+//!    piecewise-linear calibrator producing one value per lattice that consumes
+//!    the feature. fvnsim/fvnsim10 calibrators have a missing-value branch
+//!    keyed on *exact f32 equality* with a training-time sentinel (0.7 and 0.5
+//!    respectively)--an upstream quirk reproduced faithfully.
 //! 2. 60 lattices, each interpolating over 2^12 corner values with clipped
 //!    multilinear weights `1 - min(|v - vertex|, 1)` per dimension.
 //! 3. A linear combination of the lattice outputs and one final
 //!    piecewise-linear calibrator map to MOS-LQO.
 //!
-//! All arithmetic is f32 (the C++ narrows the double features when filling
-//! the TFLite input tensors) with sequential reductions. The upstream model
-//! runs under XNNPack, whose SIMD summation order differs; the resulting
-//! discrepancy is below 1e-5, far inside the 1e-4 conformance tolerance.
+//! All arithmetic is f32 with sequential reductions. There are some slight
+//! differences in our output, likely due to evaluation order or similar. The
+//! resulting discrepancy is below 1e-5, far inside the 1e-4 conformance
+//! tolerance.
 
 use std::borrow::Cow;
 
@@ -83,6 +83,7 @@ pub struct LatticeModel {
     rank: usize,
 }
 
+/// Really simple deserializer for the lattice data.
 struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
@@ -142,7 +143,7 @@ impl LatticeModel {
         let n_features = r.u32()? as usize;
         let n_lattices = r.u32()? as usize;
         let rank = r.u32()? as usize;
-        if n_features != NUM_FEATURES || rank == 0 || rank > 16 {
+        if n_features != NUM_FEATURES || !(1..=16).contains(&rank) {
             return Err(invalid_model(format!(
                 "unexpected lattice model shape ({n_features} features, rank {rank})"
             )));

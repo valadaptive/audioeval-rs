@@ -4,8 +4,7 @@
 
 use crate::matrix::Matrix;
 
-/// Per-patch similarity statistics plus the matched patches' time bounds,
-/// mirroring the C++ `PatchSimilarityResult`.
+/// Per-patch similarity statistics plus the matched patches' time bounds.
 #[derive(Clone, Debug, Default)]
 pub struct PatchSimilarityResult {
     /// Mean of `freq_band_means`, a.k.a. NSIM.
@@ -156,24 +155,23 @@ fn conv_col_into(left: &[f64], mid: &[f64], right: &[f64], out: &mut [f64]) {
 }
 
 /// The DTW-style patch search evaluates NSIM between each reference patch and
-/// the degraded patch at every candidate offset — thousands of cells, each
+/// the degraded patch at every candidate offset--thousands of cells, each
 /// needing five 3x3 convolutions. Most of that work is shared and can be
 /// hoisted (see [`similarity_at_offset`]):
 ///
-/// - `conv(ref)` and `conv(ref²)` depend only on the reference patch: one
+/// - `conv(ref)` and `conv(ref^2)` depend only on the reference patch: one
 ///   [`RefPatchConv`] per patch.
-/// - `conv(deg)` and `conv(deg²)` depend only on the degraded spectrogram.
+/// - `conv(deg)` and `conv(deg^2)` depend only on the degraded spectrogram.
 ///   Because the convolution is local and the boundary is edge replication, a
-///   patch's convolution at its *interior* columns reads exactly the same
-///   nine values in the same order as the convolution of the whole
-///   spectrogram at that column — bit-identical. Only the patch's first and
-///   last columns differ (they replicate the patch edge instead of reading
-///   the real neighbor column), and those are precomputed per offset in
-///   [`DegSpectrogramConv`].
-/// - `conv(ref ∘ deg)` depends on both and remains per-cell.
+///   patch's convolution at its *interior* columns reads exactly the same nine
+///   values in the same order as the convolution of the whole spectrogram at
+///   that column. Only the patch's first and last columns differ (they
+///   replicate the patch edge instead of reading the real neighbor column), and
+///   those are precomputed per offset in [`DegSpectrogramConv`].
+/// - `conv(ref * deg)` depends on both and remains per-cell.
 ///
-/// Only patches lying fully inside the spectrogram are supported; offsets
-/// whose patch would be zero-padded past the end must use
+/// Only patches lying fully inside the spectrogram are supported; offsets whose
+/// patch would be zero-padded past the end must use
 /// [`measure_patch_similarity`].
 pub struct RefPatchConv {
     mu: Matrix,
@@ -333,7 +331,7 @@ fn similarity_at_offset_impl(
     let c1 = (0.01 * INTENSITY_RANGE).powi(2);
     let c3 = (0.03 * INTENSITY_RANGE).powi(2) / 2.0;
 
-    // conv(ref ∘ deg), the one convolution that changes per cell.
+    // conv(ref * deg), the one convolution that changes per cell.
     for c in 0..width {
         let deg_col = &spectrogram.col(offset + c)[..rows];
         let ref_col = &ref_patch.col(c)[..rows];

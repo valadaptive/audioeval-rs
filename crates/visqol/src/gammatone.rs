@@ -3,18 +3,16 @@
 //! `signal_filter.cc`.
 //!
 //! Each spectrogram cell is the RMS of one gammatone band's output over one
-//! Hann-windowed frame; each band is a 4th-order gammatone implemented as
-//! four cascaded biquads with state reset at every frame.
+//! Hann-windowed frame; each band is a 4th-order gammatone implemented as four
+//! cascaded biquads with state reset at every frame.
 //!
 //! This is where nearly all of ViSQOL's runtime goes, so the filter bank is
 //! organized for data parallelism: bands are processed in coefficient-major
 //! groups of `LANES`, with the four cascade stages fused into one pass per
 //! frame. Every band still performs exactly the arithmetic (values and
-//! operation order) of the straightforward one-biquad-at-a-time formulation —
-//! the recurrences of different bands and of different cascade stages are
-//! independent, so interleaving them changes nothing — which keeps the output
-//! bit-identical while letting the compiler vectorize across bands and the
-//! CPU overlap the stages' serial dependency chains.
+//! operation order) of the straightforward one-biquad-at-a-time formulation,
+//! which keeps the output bit-identical while letting the compiler vectorize
+//! across bands and the CPU overlap the stages' serial dependency chains.
 
 use crate::analysis_window::AnalysisWindow;
 use crate::audio_signal::AudioSignal;
@@ -35,7 +33,7 @@ pub struct GammatoneSpectrogramBuilder {
 
 /// Filter coefficients for a group of up to `LANES` bands, one band per lane.
 /// Each cascade stage is `y = n0*x + z0; z0' = n1*x + z1 - d1*y;
-/// z1' = neg_d2*y` — a transposed direct form II biquad with a normalized
+/// z1' = neg_d2*y`, a transposed direct form II biquad with a normalized
 /// denominator [1, d1, d2]. Two exact simplifications relative to the C++
 /// formulation: the numerator's third tap is omitted because it is always
 /// zero in the ERB design (`0*x - d2*y` equals `-(d2*y)`, signed zeros

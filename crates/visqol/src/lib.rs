@@ -110,8 +110,7 @@ impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// The complete output of a comparison, mirroring the C++
-/// `SimilarityResultMsg`.
+/// The complete output of a comparison.
 #[derive(Debug)]
 pub struct SimilarityResult {
     /// Mean opinion score - listening quality objective, in [1, 5].
@@ -174,7 +173,7 @@ impl Visqol {
     }
 
     /// Speech mode (16 kHz input expected) with the deep lattice network
-    /// NSIM-to-MOS mapping, the C++ default (`--use_lattice_model`).
+    /// NSIM-to-MOS mapping, the default.
     pub fn speech_lattice() -> Self {
         Visqol {
             mapper: SimilarityToQualityMapper::Lattice(LatticeModel::default_speech_model()),
@@ -187,11 +186,11 @@ impl Visqol {
     }
 
     /// Speech mode (16 kHz input expected): voice-activity-gated patches and
-    /// the exponential NSIM-to-MOS mapping (the C++ behavior with
-    /// `--use_lattice_model=false`). `scale_to_max_mos` rescales the
-    /// fit so that a perfect NSIM maps to a MOS of 5.0 rather than ~4.x
-    /// (enabled in the C++ unless `--use_unscaled_speech_mos_mapping`).
-    pub fn speech(scale_to_max_mos: bool) -> Self {
+    /// the exponential NSIM-to-MOS mapping (`--use_lattice_model=false`).
+    /// `scale_to_max_mos` rescales the fit so that a perfect NSIM maps to a MOS
+    /// of 5.0 rather than ~4.x (enabled by default in the CLI unless
+    /// `--use_unscaled_speech_mos_mapping` is set).
+    pub fn speech_legacy(scale_to_max_mos: bool) -> Self {
         Visqol {
             mapper: SimilarityToQualityMapper::SpeechExponential { scale_to_max_mos },
             speech_mode: true,

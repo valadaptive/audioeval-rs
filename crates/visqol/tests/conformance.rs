@@ -200,7 +200,7 @@ fn bad_degraded_lattice() {
 #[test]
 fn speech_ca01_transcoded_exponential() {
     assert_moslqo(
-        &Visqol::speech(true),
+        &Visqol::speech_legacy(true),
         "clean_speech/CA01_01.wav",
         "clean_speech/transcoded_CA01_01.wav",
         3.374505555111911,
@@ -210,7 +210,7 @@ fn speech_ca01_transcoded_exponential() {
 #[test]
 fn speech_unscaled_perfect_score_exponential() {
     assert_moslqo(
-        &Visqol::speech(false),
+        &Visqol::speech_legacy(false),
         "clean_speech/CA01_01.wav",
         "clean_speech/CA01_01.wav",
         4.015861169223797,
@@ -220,7 +220,7 @@ fn speech_unscaled_perfect_score_exponential() {
 #[test]
 fn different_audios_exponential() {
     assert_moslqo(
-        &Visqol::speech(true),
+        &Visqol::speech_legacy(true),
         "conformance_testdata_subset/guitar48_stereo.wav",
         "clean_speech/CA01_01.wav",
         1.269675546824064,
@@ -230,7 +230,7 @@ fn different_audios_exponential() {
 #[test]
 fn bad_degraded_exponential() {
     assert_moslqo(
-        &Visqol::speech(true),
+        &Visqol::speech_legacy(true),
         "alignment/reference.wav",
         "alignment/degraded.wav",
         1.357521678867611,

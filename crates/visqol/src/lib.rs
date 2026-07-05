@@ -28,7 +28,6 @@
 mod alignment;
 mod analysis_window;
 mod audio_signal;
-mod envelope;
 mod erb;
 mod fft;
 mod gammatone;
@@ -39,7 +38,6 @@ mod patches;
 mod selector;
 mod spectrogram;
 mod svr;
-mod xcorr;
 
 pub use audio_signal::AudioSignal;
 pub use lattice::LatticeModel;

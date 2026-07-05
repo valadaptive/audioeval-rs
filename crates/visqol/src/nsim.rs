@@ -24,19 +24,6 @@ pub struct PatchSimilarityResult {
 
 const INTENSITY_RANGE: f64 = 1.0;
 
-/// 3x3 Gaussian window with sigma 0.5 used for the local statistics.
-const WINDOW: [f64; 9] = [
-    0.0113033910173052,
-    0.0838251475442633,
-    0.0113033910173052,
-    0.0838251475442633,
-    0.619485845753726,
-    0.0838251475442633,
-    0.0113033910173052,
-    0.0838251475442633,
-    0.0113033910173052,
-];
-
 pub fn measure_patch_similarity(ref_patch: &Matrix, deg_patch: &Matrix) -> PatchSimilarityResult {
     let c1 = (0.01 * INTENSITY_RANGE).powi(2);
     let c3 = (0.03 * INTENSITY_RANGE).powi(2) / 2.0;
@@ -123,14 +110,23 @@ fn conv2d_with_boundary_into(input: &Matrix, out: &mut Matrix) {
     }
 }
 
+/// 3x3 Gaussian window with sigma 0.5 used for the local statistics.
+const WINDOW: [f64; 9] = [
+    0.0113033910173052,
+    0.0838251475442633,
+    0.0113033910173052,
+    0.0838251475442633,
+    0.619485845753726,
+    0.0838251475442633,
+    0.0113033910173052,
+    0.0838251475442633,
+    0.0113033910173052,
+];
+
 /// One output column of the boundary convolution, given the column's three
 /// source columns; the caller expresses column replication by passing the
 /// same column twice, while row replication is handled here.
 ///
-/// The nine taps of each output cell are accumulated one at a time in the
-/// same descending-filter-index order as the C++, so results are
-/// bit-identical to the naive nested-loop form; different output cells are
-/// independent, which lets the compiler vectorize the interior loop.
 /// `inline(always)` so the [`multiversion`] wrapper around
 /// [`similarity_at_offset`] can compile it for wider register files.
 #[inline(always)]
@@ -138,25 +134,29 @@ fn conv_col_into(left: &[f64], mid: &[f64], right: &[f64], out: &mut [f64]) {
     let rows = out.len();
     debug_assert!(rows > 0);
     let (left, mid, right) = (&left[..rows], &mid[..rows], &right[..rows]);
-    let cell = |above: usize, row: usize, below: usize| {
-        let mut sum = 0.0;
-        sum += left[above] * WINDOW[8];
-        sum += left[row] * WINDOW[7];
-        sum += left[below] * WINDOW[6];
-        sum += mid[above] * WINDOW[5];
-        sum += mid[row] * WINDOW[4];
-        sum += mid[below] * WINDOW[3];
-        sum += right[above] * WINDOW[2];
-        sum += right[row] * WINDOW[1];
-        sum += right[below] * WINDOW[0];
+    // A named fn rather than a closure: closures can't be #[inline(always)],
+    // and LLVM will apparently not inline this by default!
+    #[inline(always)]
+    fn cell(
+        (left, mid, right): (&[f64], &[f64], &[f64]),
+        above: usize,
+        row: usize,
+        below: usize,
+    ) -> f64 {
+        // The window is symmetric, so we can factor out the corner and edge taps.
+        // This is not bit-identical to the C++ version, but it's quite close.
+        let mut sum = mid[row] * WINDOW[4];
+        sum += ((left[above] + left[below]) + (right[above] + right[below])) * WINDOW[0];
+        sum += ((left[row] + right[row]) + (mid[above] + mid[below])) * WINDOW[1];
         sum
-    };
-    out[0] = cell(0, 0, 1.min(rows - 1));
+    }
+    let cols = (left, mid, right);
+    out[0] = cell(cols, 0, 0, 1.min(rows - 1));
     for (row, o) in out.iter_mut().enumerate().take(rows - 1).skip(1) {
-        *o = cell(row - 1, row, row + 1);
+        *o = cell(cols, row - 1, row, row + 1);
     }
     if rows > 1 {
-        out[rows - 1] = cell(rows - 2, rows - 1, rows - 1);
+        out[rows - 1] = cell(cols, rows - 2, rows - 1, rows - 1);
     }
 }
 

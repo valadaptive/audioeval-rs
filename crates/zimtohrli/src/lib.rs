@@ -464,8 +464,8 @@ fn window_mean(
 
     // Populate tmp_b with prefix sums across the step axis.
     let channel_prefix_sum_data = &mut tmp_b[0];
-    for channel_index in 0..num_channels {
-        channel_prefix_sum_data[channel_index] = input_loader(0, channel_index);
+    for (channel_index, item) in channel_prefix_sum_data.iter_mut().enumerate() {
+        *item = input_loader(0, channel_index);
     }
 
     for step_index in 1..num_steps {
@@ -521,8 +521,8 @@ fn window_mean(
     let reciprocal = 1.0 / (step_window * channel_window) as f32;
     for step_index in 0..num_steps {
         let result_data = &mut tmp_a[step_index];
-        for channel_index in 0..num_channels {
-            result_data[channel_index] *= reciprocal;
+        for result in result_data.iter_mut() {
+            *result *= reciprocal;
         }
     }
 

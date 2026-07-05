@@ -204,10 +204,11 @@ impl Visqol {
             });
         }
 
-        let (deg_signal, alignment_lag_s) = if self.disable_global_alignment {
-            (deg_signal.clone(), 0.0)
+        let mut deg_signal = deg_signal.clone();
+        let alignment_lag_s = if self.disable_global_alignment {
+            0.0
         } else {
-            alignment::globally_align(ref_signal, deg_signal)
+            alignment::globally_align(ref_signal, &mut deg_signal)
         };
 
         let window = AnalysisWindow::new(ref_signal.sample_rate, OVERLAP);

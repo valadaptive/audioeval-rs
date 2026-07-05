@@ -244,23 +244,22 @@ pub fn finely_align_and_recreate_patches(
             continue;
         }
 
-        let ref_patch_audio = slice(
+        let mut ref_patch_audio = slice(
             ref_signal,
             sim_result.ref_patch_start_time,
             sim_result.ref_patch_end_time,
         );
-        let deg_patch_audio = slice(
+        let mut deg_patch_audio = slice(
             deg_signal,
             sim_result.deg_patch_start_time,
             sim_result.deg_patch_end_time,
         );
-        let (ref_audio_aligned, deg_audio_aligned, lag) =
-            alignment::align_and_truncate(&ref_patch_audio, &deg_patch_audio);
-        let new_ref_duration = ref_audio_aligned.duration();
-        let new_deg_duration = deg_audio_aligned.duration();
+        let lag = alignment::align_and_truncate(&mut ref_patch_audio, &mut deg_patch_audio);
+        let new_ref_duration = ref_patch_audio.duration();
+        let new_deg_duration = deg_patch_audio.duration();
 
-        let mut ref_spectrogram = spect_builder.build(&ref_audio_aligned, window)?;
-        let mut deg_spectrogram = spect_builder.build(&deg_audio_aligned, window)?;
+        let mut ref_spectrogram = spect_builder.build(&ref_patch_audio, window)?;
+        let mut deg_spectrogram = spect_builder.build(&deg_patch_audio, window)?;
         spectrogram::prepare_spectrograms_for_comparison(
             &mut ref_spectrogram,
             &mut deg_spectrogram,

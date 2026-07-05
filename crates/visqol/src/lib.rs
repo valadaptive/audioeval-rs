@@ -218,7 +218,7 @@ impl Visqol {
         };
 
         // Stage 1: preprocessing.
-        let deg_signal = audio_signal::scale_to_match_sound_pressure_level(ref_signal, &deg_signal);
+        audio_signal::scale_to_match_sound_pressure_level(ref_signal, &mut deg_signal);
         let spect_builder =
             GammatoneSpectrogramBuilder::new(num_bands, MINIMUM_FREQ, self.speech_mode);
         let mut ref_spectrogram = spect_builder.build(ref_signal, &window)?;

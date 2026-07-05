@@ -40,15 +40,13 @@ impl AudioSignal {
 
 /// Scales the degraded signal so its sound pressure level matches the
 /// reference (`MiscAudio::ScaleToMatchSoundPressureLevel`).
-pub fn scale_to_match_sound_pressure_level(
-    reference: &AudioSignal,
-    degraded: &AudioSignal,
-) -> AudioSignal {
+pub fn scale_to_match_sound_pressure_level(reference: &AudioSignal, degraded: &mut AudioSignal) {
     let ref_spl = calc_sound_pressure_level(reference);
     let deg_spl = calc_sound_pressure_level(degraded);
     let scale_factor = 10f64.powf((ref_spl - deg_spl) / 20.0);
-    let samples = degraded.samples.iter().map(|&s| s * scale_factor).collect();
-    AudioSignal::new(samples, degraded.sample_rate)
+    for sample in &mut degraded.samples {
+        *sample *= scale_factor;
+    }
 }
 
 fn calc_sound_pressure_level(signal: &AudioSignal) -> f64 {

@@ -3,6 +3,8 @@
 //! 2D convolution in the NSIM measure indexes the underlying buffer flat,
 //! and spectrogram frames (columns) stay contiguous.
 
+use std::ops::{Index, IndexMut, RangeInclusive};
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Matrix {
     rows: usize,
@@ -51,12 +53,6 @@ impl Matrix {
         self.data[col * self.rows + row] = value;
     }
 
-    /// Flat access in column-major order, like Armadillo's `operator()(i)`.
-    #[inline]
-    pub fn flat(&self, index: usize) -> f64 {
-        self.data[index]
-    }
-
     pub fn col(&self, col: usize) -> &[f64] {
         &self.data[col * self.rows..(col + 1) * self.rows]
     }
@@ -72,8 +68,10 @@ impl Matrix {
         }
     }
 
-    /// Copy of columns `start..=end` (inclusive, like Armadillo `cols()`).
-    pub fn get_cols(&self, start: usize, end: usize) -> Matrix {
+    /// Copy of columns `start..=end`, inclusive.
+    pub fn get_cols(&self, range: RangeInclusive<usize>) -> Matrix {
+        let start = *range.start();
+        let end = *range.end();
         let cols = end - start + 1;
         Matrix {
             rows: self.rows,
@@ -82,9 +80,9 @@ impl Matrix {
         }
     }
 
-    /// Elements `start..=end` of one row (inclusive end, like `RowSubset`).
-    pub fn row_subset(&self, row: usize, start_col: usize, end_col: usize) -> Vec<f64> {
-        (start_col..=end_col).map(|c| self.at(row, c)).collect()
+    /// Elements `start..=end` of one row, inclusive.
+    pub fn row_subset(&self, row: usize, cols: RangeInclusive<usize>) -> Vec<f64> {
+        cols.map(|c| self.at(row, c)).collect()
     }
 
     /// Per-row mean across columns (Armadillo `mean(m, 1)`).
@@ -122,5 +120,21 @@ impl Matrix {
 
     pub fn min(&self) -> f64 {
         self.data.iter().copied().fold(f64::INFINITY, f64::min)
+    }
+}
+
+impl Index<usize> for Matrix {
+    type Output = f64;
+
+    /// Flat access in column-major order, like Armadillo's `operator()(i)`.
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.data[index]
+    }
+}
+
+impl IndexMut<usize> for Matrix {
+    /// Flat access in column-major order, like Armadillo's `operator()(i)`.
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.data[index]
     }
 }

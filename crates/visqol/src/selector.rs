@@ -189,7 +189,7 @@ fn build_degraded_patch(
     let first_real_frame = window_beginning.max(0) as usize;
     let last_real_frame = window_end.min(spectrogram_data.cols() - 1);
     for row_index in 0..spectrogram_data.rows() {
-        let mut row = spectrogram_data.row_subset(row_index, first_real_frame, last_real_frame);
+        let mut row = spectrogram_data.row_subset(row_index, first_real_frame..=last_real_frame);
         if window_beginning < 0 {
             let mut padded = vec![0.0; (-window_beginning) as usize];
             padded.append(&mut row);

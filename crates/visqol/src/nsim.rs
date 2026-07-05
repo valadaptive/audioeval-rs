@@ -75,17 +75,16 @@ pub fn measure_patch_similarity(ref_patch: &Matrix, deg_patch: &Matrix) -> Patch
 
     let mut sim_map = Matrix::zeros(ref_patch.rows(), ref_patch.cols());
     for i in 0..sim_map.data().len() {
-        let intensity =
-            (2.0 * mu_r_mu_d.flat(i) + c1) / (ref_mu_sq.flat(i) + deg_mu_sq.flat(i) + c1);
+        let intensity = (2.0 * mu_r_mu_d[i] + c1) / (ref_mu_sq[i] + deg_mu_sq[i] + c1);
         // Negative variances can occur for silent patches due to precision;
         // the C++ replaces the sqrt with zero in that case.
-        let sigma_prod = sigma_r_sq.flat(i) * sigma_d_sq.flat(i);
+        let sigma_prod = sigma_r_sq[i] * sigma_d_sq[i];
         let structure_denom = if sigma_prod < 0.0 {
             c3
         } else {
             sigma_prod.sqrt() + c3
         };
-        let structure = (sigma_r_d.flat(i) + c3) / structure_denom;
+        let structure = (sigma_r_d[i] + c3) / structure_denom;
         sim_map.data_mut()[i] = intensity * structure;
     }
 
@@ -441,7 +440,7 @@ mod tests {
             let mut scratch = NsimScratch::new(rows, width);
 
             for offset in 0..=(cols - width) {
-                let deg_patch = spectrogram.get_cols(offset, offset + width - 1);
+                let deg_patch = spectrogram.get_cols(offset..=offset + width - 1);
                 let expected = measure_patch_similarity(&ref_patch, &deg_patch).similarity;
                 let actual = similarity_at_offset(
                     &ref_patch,

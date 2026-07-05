@@ -85,6 +85,12 @@ fn main() -> Result<()> {
                 .action(ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("disable_resample")
+                .long("disable_resample")
+                .help("disable automatic resampling (not recommended)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("verbose")
                 .long("verbose")
                 .short('v')
@@ -105,7 +111,7 @@ fn main() -> Result<()> {
         if *matches.get_one::<bool>("use_lattice_model").unwrap() {
             Visqol::speech_lattice()
         } else {
-            Visqol::speech(!matches.get_flag("use_unscaled_speech_mos_mapping"))
+            Visqol::speech_legacy(!matches.get_flag("use_unscaled_speech_mos_mapping"))
         }
     } else {
         match matches.get_one::<PathBuf>("similarity_to_quality_model") {
@@ -120,24 +126,30 @@ fn main() -> Result<()> {
     visqol.search_window_radius = *matches.get_one::<usize>("search_window_radius").unwrap();
     visqol.disable_global_alignment = matches.get_flag("disable_global_alignment");
     visqol.disable_realignment = matches.get_flag("disable_realignment");
+    let disable_resample = matches.get_flag("disable_resample");
 
-    // Like the C++ CLI, files are used at their native sample rate; ViSQOL
-    // only requires that the two rates match.
     let load = |path: &PathBuf| -> Result<AudioSignal> {
-        let file = audio_io::read_audio_file_native(path)?;
-        let sample_rate = file.src_sample_rate as u32;
-        if speech_mode && sample_rate > 16000 {
-            eprintln!(
-                "WARNING: input audio sample rate is above 16kHz, which may have \
-                 undesired effects for speech mode. Consider resampling to 16kHz."
-            );
-        } else if !speech_mode && sample_rate != 48000 {
-            eprintln!(
-                "WARNING: input audio does not have the expected sample rate of \
-                 48kHz! This may negatively affect the prediction of the MOS-LQO score."
-            );
-        }
-        Ok(AudioSignal::from_channels(&file.channels, sample_rate))
+        let (rate, file) = if disable_resample {
+            let file = audio_io::read_audio_file_native(path)?;
+            let rate = file.src_sample_rate;
+            if speech_mode && rate > 16000 {
+                eprintln!(
+                    "WARNING: input audio sample rate is above 16kHz, which may have \
+                    undesired effects for speech mode. Consider resampling to 16kHz."
+                );
+            } else if !speech_mode && rate != 48000 {
+                eprintln!(
+                    "WARNING: input audio does not have the expected sample rate of \
+                    48kHz! This may negatively affect the prediction of the MOS-LQO score."
+                );
+            }
+            (rate, file)
+        } else {
+            let rate = if speech_mode { 16000 } else { 48000 };
+            let file = audio_io::read_audio_file(path, rate)?;
+            (rate, file)
+        };
+        Ok(AudioSignal::from_channels(&file.channels, rate as u32))
     };
 
     let reference = load(reference_path)?;

@@ -37,31 +37,42 @@ pub fn find_most_optimal_deg_patches(
     let mut dp = vec![vec![0.0f64; num_frames_in_deg_spectro]; ref_patch_indices.len()];
     let mut backtrace = vec![vec![0i64; num_frames_in_deg_spectro]; ref_patch_indices.len()];
 
-    // A degraded patch candidate starting at every possible frame offset.
-    let deg_patches: Vec<Matrix> = (0..num_frames_in_deg_spectro)
-        .map(|slide_offset| {
-            build_degraded_patch(
-                spectrogram_data,
-                slide_offset as i64,
-                slide_offset + num_frames_per_patch - 1,
-                ref_patches[0].rows(),
-                num_frames_per_patch,
-            )
-        })
-        .collect();
+    // Precomputed convolution maps shared by every NSIM cell of the search
+    // (see `nsim::similarity_at_offset`).
+    let deg_conv = nsim::DegSpectrogramConv::new(spectrogram_data, num_frames_per_patch);
+    let mut scratch = nsim::NsimScratch::new(ref_patches[0].rows(), num_frames_per_patch);
 
     for patch_index in 0..num_patches {
+        let ref_patch = &ref_patches[patch_index];
+        let ref_conv = nsim::RefPatchConv::new(ref_patch);
         let ref_frame_index = ref_patch_indices[patch_index] as i64;
         let first_offset = (ref_frame_index - search_window).max(0) as usize;
         for slide_offset in first_offset..num_frames_in_deg_spectro {
             if slide_offset as i64 > ref_frame_index + search_window {
                 break;
             }
-            let sim_result = nsim::measure_patch_similarity(
-                &ref_patches[patch_index],
-                &deg_patches[slide_offset],
-            );
-            let mut similarity = sim_result.similarity;
+            let mut similarity = if slide_offset + num_frames_per_patch <= num_frames_in_deg_spectro
+            {
+                nsim::similarity_at_offset(
+                    ref_patch,
+                    &ref_conv,
+                    spectrogram_data,
+                    &deg_conv,
+                    slide_offset,
+                    &mut scratch,
+                )
+            } else {
+                // The patch overhangs the end of the spectrogram and gets
+                // zero-padded; take the plain path.
+                let deg_patch = build_degraded_patch(
+                    spectrogram_data,
+                    slide_offset as i64,
+                    slide_offset + num_frames_per_patch - 1,
+                    ref_patch.rows(),
+                    num_frames_per_patch,
+                );
+                nsim::measure_patch_similarity(ref_patch, &deg_patch).similarity
+            };
 
             let mut past_slide_offset: i64 = -1;
             if patch_index > 0 {

@@ -70,7 +70,10 @@ pub fn create_vad_patch_indices(
     let mut patch_indices = Vec::with_capacity(patch_count);
     let mut patch_idx = first_patch_idx;
     for i in 0..patch_count {
-        let frames_with_va: f64 = vad_res[i * patch_size..(i + 1) * patch_size].iter().sum();
+        let frames_with_va = vad_res[i * patch_size..(i + 1) * patch_size]
+            .iter()
+            .map(|&v| v as usize)
+            .sum::<usize>() as f64;
         if frames_with_va >= FRAMES_WITH_VA_THRESHOLD {
             patch_indices.push(patch_idx);
         }
@@ -79,64 +82,40 @@ pub fn create_vad_patch_indices(
     patch_indices
 }
 
+const SILENT_CHUNK_COUNT: usize = 3;
+const RMS_THRESHOLD: f64 = 5000.0;
+
+/// RMS-threshold voice activity detector (`rms_vad.cc`).
 fn get_voice_activity(
     signal: &[f64],
     start_sample: usize,
     total_samples: usize,
     frame_len: usize,
-) -> Vec<f64> {
-    let mut vad = RmsVad::new();
+) -> Vec<bool> {
     let patch = &signal[start_sample..start_sample + total_samples];
+    let mut each_chunk_result = Vec::new();
 
-    let mut frame = Vec::with_capacity(frame_len);
-    for &value in patch {
-        // Saturating cast to i16.
-        let scaled = (value * 32768.0) as i16;
-        frame.push(scaled);
-        if frame.len() == frame_len {
-            vad.process_chunk(&frame);
-            frame.clear();
+    for values in patch.chunks_exact(frame_len) {
+        let mut square = 0.0;
+        for &v in values {
+            // Saturates between -32768.0 and 32767.0 due to the i16 cast
+            let scaled = (v * 32768.0) as i16 as f64;
+            square += scaled * scaled;
         }
-    }
-    vad.get_vad_results()
-}
-
-/// RMS-threshold voice activity detector (`rms_vad.cc`).
-struct RmsVad {
-    each_chunk_result: Vec<bool>,
-}
-
-impl RmsVad {
-    const SILENT_CHUNK_COUNT: usize = 3;
-    const RMS_THRESHOLD: f64 = 5000.0;
-
-    fn new() -> Self {
-        RmsVad {
-            each_chunk_result: Vec::new(),
-        }
+        let rms = (square / frame_len as f64).sqrt();
+        each_chunk_result.push(rms >= RMS_THRESHOLD);
     }
 
-    fn process_chunk(&mut self, chunk: &[i16]) {
-        let square: f64 = chunk.iter().map(|&v| (v as f64) * (v as f64)).sum();
-        let rms = (square / chunk.len() as f64).sqrt();
-        self.each_chunk_result.push(rms >= Self::RMS_THRESHOLD);
+    // The first chunks are always marked as active to avoid false
+    // negatives; a chunk is only inactive if it and the previous
+    // SILENT_CHUNK_COUNT - 1 chunks are all below threshold.
+    let mut results = vec![true; SILENT_CHUNK_COUNT - 1];
+    for i in SILENT_CHUNK_COUNT - 1..each_chunk_result.len() {
+        let previous_silent = each_chunk_result[i + 1 - SILENT_CHUNK_COUNT..i]
+            .iter()
+            .all(|&active| !active);
+        results.push(each_chunk_result[i] || !previous_silent);
     }
 
-    fn get_vad_results(&self) -> Vec<f64> {
-        // The first chunks are always marked as active to avoid false
-        // negatives; a chunk is only inactive if it and the previous
-        // SILENT_CHUNK_COUNT - 1 chunks are all below threshold.
-        let mut results = vec![1.0; Self::SILENT_CHUNK_COUNT - 1];
-        for i in Self::SILENT_CHUNK_COUNT - 1..self.each_chunk_result.len() {
-            let previous_silent = self.each_chunk_result[i + 1 - Self::SILENT_CHUNK_COUNT..i]
-                .iter()
-                .all(|&active| !active);
-            if !self.each_chunk_result[i] && previous_silent {
-                results.push(0.0);
-            } else {
-                results.push(1.0);
-            }
-        }
-        results
-    }
+    results
 }

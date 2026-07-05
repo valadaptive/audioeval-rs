@@ -6,31 +6,6 @@ use crate::audio_signal::AudioSignal;
 use crate::matrix::Matrix;
 use crate::{Error, Result};
 
-pub enum PatchCreator {
-    Image,
-    Vad,
-}
-
-impl PatchCreator {
-    pub fn create_ref_patch_indices(
-        &self,
-        spectrogram: &Matrix,
-        ref_signal: &AudioSignal,
-        window: &AnalysisWindow,
-        patch_size: usize,
-    ) -> Result<Vec<usize>> {
-        match self {
-            PatchCreator::Image => create_image_patch_indices(spectrogram, patch_size),
-            PatchCreator::Vad => Ok(create_vad_patch_indices(
-                spectrogram,
-                ref_signal,
-                window,
-                patch_size,
-            )),
-        }
-    }
-}
-
 pub fn create_patches_from_indices(
     spectrogram: &Matrix,
     patch_indices: &[usize],
@@ -42,7 +17,7 @@ pub fn create_patches_from_indices(
         .collect()
 }
 
-fn create_image_patch_indices(spectrogram: &Matrix, patch_size: usize) -> Result<Vec<usize>> {
+pub fn create_image_patch_indices(spectrogram: &Matrix, patch_size: usize) -> Result<Vec<usize>> {
     let spectrum_length = spectrogram.cols();
     let init_patch_index = patch_size / 2;
     if spectrum_length < patch_size + init_patch_index {
@@ -62,7 +37,7 @@ fn create_image_patch_indices(spectrogram: &Matrix, patch_size: usize) -> Result
         .collect())
 }
 
-fn create_vad_patch_indices(
+pub fn create_vad_patch_indices(
     spectrogram: &Matrix,
     ref_signal: &AudioSignal,
     window: &AnalysisWindow,

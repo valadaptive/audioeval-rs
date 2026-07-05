@@ -48,7 +48,7 @@ pub use svr::{SimilarityToQualityMapper, SvrModel};
 
 use analysis_window::AnalysisWindow;
 use gammatone::GammatoneSpectrogramBuilder;
-use patches::PatchCreator;
+use patches::{create_image_patch_indices, create_vad_patch_indices};
 
 #[derive(Debug)]
 pub enum Error {
@@ -230,17 +230,11 @@ impl Visqol {
         );
 
         // Stage 2: feature selection and similarity measure.
-        let patch_creator = if self.speech_mode {
-            PatchCreator::Vad
+        let ref_patch_indices = if self.speech_mode {
+            create_vad_patch_indices(&ref_spectrogram.data, ref_signal, &window, patch_size)
         } else {
-            PatchCreator::Image
+            create_image_patch_indices(&ref_spectrogram.data, patch_size)?
         };
-        let ref_patch_indices = patch_creator.create_ref_patch_indices(
-            &ref_spectrogram.data,
-            ref_signal,
-            &window,
-            patch_size,
-        )?;
         let frame_duration =
             (window.size as f64 * window.overlap) as usize as f64 / ref_signal.sample_rate as f64;
 

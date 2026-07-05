@@ -61,14 +61,9 @@ pub fn measure_patch_similarity(ref_patch: &Matrix, deg_patch: &Matrix) -> Patch
         let sigma_r_sq = conv_rr[i] - mu_r[i] * mu_r[i];
         let sigma_d_sq = conv_dd[i] - mu_d[i] * mu_d[i];
         let sigma_r_d = sim_map[i] - mu_r_mu_d;
-        // Negative variances can occur for silent patches due to precision;
-        // the C++ replaces the sqrt with zero in that case.
+        // Negative variances can occur for silent patches due to precision.
         let sigma_prod = sigma_r_sq * sigma_d_sq;
-        let structure_denom = if sigma_prod < 0.0 {
-            c3
-        } else {
-            sigma_prod.sqrt() + c3
-        };
+        let structure_denom = sigma_prod.max(0.0).sqrt() + c3;
         let structure = (sigma_r_d + c3) / structure_denom;
         sim_map.data_mut()[i] = intensity * structure;
     }

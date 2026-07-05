@@ -90,7 +90,7 @@ mod tests {
             // Log-uniform over the full range delta_norm can produce
             // (sums of squared f32 differences: 0 or [2^-298, ~2^80])
             // and beyond, up to the whole normal range.
-            let exponent = (rng.next() % 2045) as u64 + 1; // biased exp 1..=2045
+            let exponent = (rng.next() % 2045) + 1; // biased exp 1..=2045
             let mantissa = rng.next() & 0xf_ffff_ffff_ffff;
             let x = f64::from_bits((exponent << 52) | mantissa);
             let expected = libm::pow(x, PP);

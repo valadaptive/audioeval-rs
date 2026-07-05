@@ -2,6 +2,8 @@
 //! DTW-style dynamic program, plus the per-patch time-domain fine
 //! realignment. A port of `comparison_patches_selector.cc`.
 
+use std::ops::Range;
+
 use crate::alignment;
 use crate::analysis_window::AnalysisWindow;
 use crate::audio_signal::AudioSignal;
@@ -66,8 +68,7 @@ pub fn find_most_optimal_deg_patches(
                 // zero-padded; take the plain path.
                 let deg_patch = build_degraded_patch(
                     spectrogram_data,
-                    slide_offset as i64,
-                    slide_offset + num_frames_per_patch - 1,
+                    slide_offset..slide_offset + num_frames_per_patch,
                     ref_patch.rows(),
                     num_frames_per_patch,
                 );
@@ -125,8 +126,7 @@ pub fn find_most_optimal_deg_patches(
         let ref_patch = &ref_patches[patch_index];
         let deg_patch = build_degraded_patch(
             spectrogram_data,
-            last_offset as i64,
-            last_offset + ref_patch.cols() - 1,
+            last_offset..last_offset + ref_patch.cols(),
             ref_patch.rows(),
             ref_patch.cols(),
         );
@@ -176,28 +176,23 @@ fn calc_max_num_patches(
     num_patches
 }
 
-/// Extracts the degraded spectrogram columns `window_beginning..=window_end`,
-/// zero-padding for out-of-range frames on either side.
+/// Extracts the degraded spectrogram columns `window_range`, zero-padding
+/// frames past the end of the spectrogram. (The C++ also pads negative frames
+/// on the left, but no caller can produce a negative window start since the
+/// v3.1.0 dynamic-program rewrite.)
 fn build_degraded_patch(
     spectrogram_data: &Matrix,
-    window_beginning: i64,
-    window_end: usize,
+    window_range: Range<usize>,
     window_height: usize,
     window_width: usize,
 ) -> Matrix {
     let mut deg_patch = Matrix::zeros(window_height, window_width);
-    let first_real_frame = window_beginning.max(0) as usize;
-    let last_real_frame = window_end.min(spectrogram_data.cols() - 1);
+    let last_real_frame = window_range.end.min(spectrogram_data.cols());
     for row_index in 0..spectrogram_data.rows() {
-        let mut row = spectrogram_data.row_subset(row_index, first_real_frame..=last_real_frame);
-        if window_beginning < 0 {
-            let mut padded = vec![0.0; (-window_beginning) as usize];
-            padded.append(&mut row);
-            row = padded;
-        }
-        if window_end > spectrogram_data.cols() - 1 {
+        let mut row = spectrogram_data.row_subset(row_index, window_range.start..last_real_frame);
+        if window_range.end > spectrogram_data.cols() {
             row.resize(
-                row.len() + (window_end - (spectrogram_data.cols() - 1)),
+                row.len() + (window_range.end - spectrogram_data.cols()),
                 0.0,
             );
         }

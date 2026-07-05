@@ -3,7 +3,7 @@
 //! 2D convolution in the NSIM measure indexes the underlying buffer flat,
 //! and spectrogram frames (columns) stay contiguous.
 
-use std::ops::{Index, IndexMut, RangeInclusive};
+use std::ops::{Index, IndexMut, Range};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Matrix {
@@ -68,20 +68,19 @@ impl Matrix {
         }
     }
 
-    /// Copy of columns `start..=end`, inclusive.
-    pub fn get_cols(&self, range: RangeInclusive<usize>) -> Matrix {
-        let start = *range.start();
-        let end = *range.end();
-        let cols = end - start + 1;
+    /// Copy of columns `start..end`.
+    pub fn get_cols(&self, range: Range<usize>) -> Matrix {
+        let Range { start, end } = range;
+        let cols = end - start;
         Matrix {
             rows: self.rows,
             cols,
-            data: self.data[start * self.rows..(end + 1) * self.rows].to_vec(),
+            data: self.data[start * self.rows..end * self.rows].to_vec(),
         }
     }
 
-    /// Elements `start..=end` of one row, inclusive.
-    pub fn row_subset(&self, row: usize, cols: RangeInclusive<usize>) -> Vec<f64> {
+    /// Elements `start..end` of one row.
+    pub fn row_subset(&self, row: usize, cols: Range<usize>) -> Vec<f64> {
         cols.map(|c| self.at(row, c)).collect()
     }
 

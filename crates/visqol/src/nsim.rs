@@ -440,7 +440,7 @@ mod tests {
             let mut scratch = NsimScratch::new(rows, width);
 
             for offset in 0..=(cols - width) {
-                let deg_patch = spectrogram.get_cols(offset..=offset + width - 1);
+                let deg_patch = spectrogram.get_cols(offset..offset + width);
                 let expected = measure_patch_similarity(&ref_patch, &deg_patch).similarity;
                 let actual = similarity_at_offset(
                     &ref_patch,

@@ -38,7 +38,7 @@ pub fn create_patches_from_indices(
 ) -> Vec<Matrix> {
     patch_indices
         .iter()
-        .map(|&start| spectrogram.get_cols(start..=start + patch_size - 1))
+        .map(|&start| spectrogram.get_cols(start..start + patch_size))
         .collect()
 }
 

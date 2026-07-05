@@ -230,6 +230,7 @@ fn slice(signal: &AudioSignal, start_time: f64, end_time: f64) -> AudioSignal {
 /// sub-frame precision, rebuilds both spectrograms, rescores, and keeps
 /// whichever similarity is higher.
 pub fn finely_align_and_recreate_patches(
+    fft_manager: &alignment::FftManager,
     sim_results: &mut [PatchSimilarityResult],
     ref_signal: &AudioSignal,
     deg_signal: &AudioSignal,
@@ -254,7 +255,8 @@ pub fn finely_align_and_recreate_patches(
             sim_result.deg_patch_start_time,
             sim_result.deg_patch_end_time,
         );
-        let lag = alignment::align_and_truncate(&mut ref_patch_audio, &mut deg_patch_audio);
+        let lag =
+            alignment::align_and_truncate(fft_manager, &mut ref_patch_audio, &mut deg_patch_audio);
         let new_ref_duration = ref_patch_audio.duration();
         let new_deg_duration = deg_patch_audio.duration();
 

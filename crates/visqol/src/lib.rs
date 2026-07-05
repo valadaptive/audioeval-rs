@@ -49,6 +49,8 @@ use analysis_window::AnalysisWindow;
 use gammatone::GammatoneSpectrogramBuilder;
 use patches::{create_image_patch_indices, create_vad_patch_indices};
 
+use crate::alignment::FftManager;
+
 #[derive(Debug)]
 pub enum Error {
     SampleRateMismatch {
@@ -132,8 +134,12 @@ pub struct SimilarityResult {
     pub alignment_lag_s: f64,
 }
 
+/// Main ViSQOL analysis struct. Creating one of these will likely involve some
+/// expensive operations (loading models, creating FFT plans, etc), so you
+/// should create one and reuse it across multiple clips.
 pub struct Visqol {
     mapper: SimilarityToQualityMapper,
+    fft_manager: FftManager,
     speech_mode: bool,
     /// How many patch-lengths on either side of a reference patch's position
     /// the matching search may look.
@@ -163,6 +169,7 @@ impl Visqol {
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            fft_manager: FftManager::default(),
         }
     }
 
@@ -175,6 +182,7 @@ impl Visqol {
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            fft_manager: FftManager::default(),
         }
     }
 
@@ -190,9 +198,11 @@ impl Visqol {
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            fft_manager: FftManager::default(),
         }
     }
 
+    /// Run an analysis over a reference and degraded signal.
     pub fn run(
         &self,
         ref_signal: &AudioSignal,
@@ -209,7 +219,7 @@ impl Visqol {
         let alignment_lag_s = if self.disable_global_alignment {
             0.0
         } else {
-            alignment::globally_align(ref_signal, &mut deg_signal)
+            alignment::globally_align(&self.fft_manager, ref_signal, &mut deg_signal)
         };
 
         let window = AnalysisWindow::new(ref_signal.sample_rate, OVERLAP);
@@ -260,6 +270,7 @@ impl Visqol {
         // coarse patch times.
         if !self.disable_realignment {
             selector::finely_align_and_recreate_patches(
+                &self.fft_manager,
                 &mut sim_match_info,
                 ref_signal,
                 &deg_signal,

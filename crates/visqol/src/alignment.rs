@@ -1,6 +1,6 @@
 //! Global signal alignment, a port of `alignment.cc`, `envelope.cc`, and `xcorr.cc`.
 
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 use realfft::RealFftPlanner;
 
@@ -11,21 +11,24 @@ use crate::audio_signal::AudioSignal;
 /// double precision, which only affects results below the f32 noise floor.
 const MIN_FFT_SIZE: usize = 32;
 
-// The planner caches plans (twiddle tables) by size; keep one per thread so
-// the many small per-patch FFTs during fine realignment don't re-plan.
-thread_local! {
-    static PLANNER: RefCell<RealFftPlanner<f64>> = RefCell::new(RealFftPlanner::new());
-}
+/// Unlike the C++ `FftManager`, we actually cache and reuse FFT plans.
+#[derive(Default)]
+pub struct FftManager(Mutex<RealFftPlanner<f64>>);
 
 /// Upper-envelope calculation via the Hilbert transform.
-fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
+fn calc_upper_env(fft_manager: &FftManager, signal: &[f64]) -> Vec<f64> {
     let n = signal.len();
     assert!(n > 0, "cannot compute envelope of empty signal");
     let mean = signal.iter().sum::<f64>() / n as f64;
 
     let fft_size = n.next_power_of_two().max(MIN_FFT_SIZE);
-    let (r2c, c2r) =
-        PLANNER.with_borrow_mut(|p| (p.plan_fft_forward(fft_size), p.plan_fft_inverse(fft_size)));
+    let (r2c, c2r) = {
+        let mut planner = fft_manager.0.lock().unwrap();
+        (
+            planner.plan_fft_forward(fft_size),
+            planner.plan_fft_inverse(fft_size),
+        )
+    };
 
     // Mean-centered signal, zero-padded to the FFT size.
     let mut time = vec![0.0; fft_size];
@@ -64,7 +67,7 @@ fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
 
 /// Returns the lag (in samples) at which `signal_2` best aligns to
 /// `signal_1`. Positive means `signal_2` is delayed relative to `signal_1`.
-fn find_lowest_lag_index(signal_1: &[f64], signal_2: &[f64]) -> i64 {
+fn find_lowest_lag_index(fft_manager: &FftManager, signal_1: &[f64], signal_2: &[f64]) -> i64 {
     let longest = signal_1.len().max(signal_2.len());
     let max_lag = longest - 1;
 
@@ -72,8 +75,13 @@ fn find_lowest_lag_index(signal_1: &[f64], signal_2: &[f64]) -> i64 {
     // `2 * longest - 1` points (the C++ derives the same count with
     // frexp(2 * len - 1)).
     let fft_size = (2 * longest - 1).next_power_of_two().max(MIN_FFT_SIZE);
-    let (r2c, c2r) =
-        PLANNER.with_borrow_mut(|p| (p.plan_fft_forward(fft_size), p.plan_fft_inverse(fft_size)));
+    let (r2c, c2r) = {
+        let mut planner = fft_manager.0.lock().unwrap();
+        (
+            planner.plan_fft_forward(fft_size),
+            planner.plan_fft_inverse(fft_size),
+        )
+    };
 
     // One zero-padded input buffer, refilled for the second transform
     // (`process` uses it as scratch).
@@ -118,10 +126,14 @@ fn find_lowest_lag_index(signal_1: &[f64], signal_2: &[f64]) -> i64 {
 /// Aligns the degraded signal to the reference in place by cross-correlating
 /// their upper envelopes. Returns the lag in seconds (positive when the
 /// degraded signal was delayed / zero-padded).
-pub fn globally_align(reference: &AudioSignal, degraded: &mut AudioSignal) -> f64 {
-    let ref_env = calc_upper_env(&reference.samples);
-    let deg_env = calc_upper_env(&degraded.samples);
-    let best_lag = find_lowest_lag_index(&ref_env, &deg_env);
+pub fn globally_align(
+    fft_manager: &FftManager,
+    reference: &AudioSignal,
+    degraded: &mut AudioSignal,
+) -> f64 {
+    let ref_env = calc_upper_env(fft_manager, &reference.samples);
+    let deg_env = calc_upper_env(fft_manager, &degraded.samples);
+    let best_lag = find_lowest_lag_index(fft_manager, &ref_env, &deg_env);
 
     // Limit the lag to half the reference duration.
     if best_lag == 0 || best_lag.unsigned_abs() as f64 > reference.samples.len() as f64 / 2.0 {
@@ -144,8 +156,12 @@ pub fn globally_align(reference: &AudioSignal, degraded: &mut AudioSignal) -> f6
 
 /// Aligns the two signals in place and truncates them to matching lengths,
 /// used for per-patch fine alignment. Returns the lag in seconds.
-pub fn align_and_truncate(reference: &mut AudioSignal, degraded: &mut AudioSignal) -> f64 {
-    let lag = globally_align(reference, degraded);
+pub fn align_and_truncate(
+    fft_manager: &FftManager,
+    reference: &mut AudioSignal,
+    degraded: &mut AudioSignal,
+) -> f64 {
+    let lag = globally_align(fft_manager, reference, degraded);
     let ref_len = reference.samples.len();
     let deg_len = degraded.samples.len();
 

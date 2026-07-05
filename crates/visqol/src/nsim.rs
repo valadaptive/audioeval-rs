@@ -391,14 +391,7 @@ fn similarity_at_offset_impl(
             let intensity = (2.0 * mu_r_mu_d + c1) / (mu_r * mu_r + mu_d * mu_d + c1);
             let sigma_r_d = conv_rd_col[r] - mu_r_mu_d;
             let sigma_prod = sigma_r_col[r] * sigma_d_col[r];
-            // Written as an unconditional sqrt plus a select so the loop
-            // vectorizes: sqrt of a negative is NaN, but that lane picks the
-            // bare c3, exactly like the branchy form.
-            let structure_denom = if sigma_prod < 0.0 {
-                c3
-            } else {
-                sigma_prod.sqrt() + c3
-            };
+            let structure_denom = sigma_prod.max(0.0).sqrt() + c3;
             let structure = (sigma_r_d + c3) / structure_denom;
             row_sums[r] += intensity * structure;
         }

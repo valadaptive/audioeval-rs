@@ -370,7 +370,7 @@ fn calc_pooled_freq_band_std_devs(
             let variance =
                 (c - mean * mean * total_frame_count as f64) / (total_frame_count - 1) as f64;
             // Precision issues can push the variance slightly negative.
-            if variance < 0.0 { 0.0 } else { variance.sqrt() }
+            variance.max(0.0).sqrt()
         })
         .collect()
 }

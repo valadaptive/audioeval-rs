@@ -2,7 +2,14 @@
 //! libsvm used by the C++ for the audio-mode similarity-to-quality mapping.
 //! Parses the standard libsvm text model format.
 
+use std::borrow::Cow;
+
 use crate::{Error, Result};
+
+#[inline(always)]
+fn invalid_model(msg: impl Into<Cow<'static, str>>) -> Error {
+    Error::InvalidSVRModel(msg.into())
+}
 
 pub struct SvrModel {
     gamma: f64,
@@ -25,14 +32,14 @@ impl SvrModel {
             match key {
                 "svm_type" => {
                     if value != Some("nu_svr") {
-                        return Err(Error::InvalidModel(format!(
+                        return Err(invalid_model(format!(
                             "unsupported svm_type {value:?}, expected nu_svr"
                         )));
                     }
                 }
                 "kernel_type" => {
                     if value != Some("rbf") {
-                        return Err(Error::InvalidModel(format!(
+                        return Err(invalid_model(format!(
                             "unsupported kernel_type {value:?}, expected rbf"
                         )));
                     }
@@ -42,14 +49,12 @@ impl SvrModel {
                 "nr_class" | "total_sv" => {}
                 "SV" => break,
                 other => {
-                    return Err(Error::InvalidModel(format!(
-                        "unexpected header key {other:?}"
-                    )));
+                    return Err(invalid_model(format!("unexpected header key {other:?}")));
                 }
             }
         }
-        let gamma = gamma.ok_or_else(|| Error::InvalidModel("missing gamma".into()))?;
-        let rho = rho.ok_or_else(|| Error::InvalidModel("missing rho".into()))?;
+        let gamma = gamma.ok_or_else(|| invalid_model("missing gamma"))?;
+        let rho = rho.ok_or_else(|| invalid_model("missing rho"))?;
 
         let mut support_vectors = Vec::new();
         for line in lines {
@@ -60,18 +65,18 @@ impl SvrModel {
             let coef: f64 = parts
                 .next()
                 .and_then(|v| v.parse().ok())
-                .ok_or_else(|| Error::InvalidModel("bad SV coefficient".into()))?;
+                .ok_or_else(|| invalid_model("bad SV coefficient"))?;
             let mut sv = Vec::new();
             for part in parts {
                 let (index, value) = part
                     .split_once(':')
-                    .ok_or_else(|| Error::InvalidModel("bad SV feature".into()))?;
+                    .ok_or_else(|| invalid_model("bad SV feature"))?;
                 let index: usize = index
                     .parse()
-                    .map_err(|_| Error::InvalidModel("bad SV feature index".into()))?;
+                    .map_err(|_| invalid_model("bad SV feature index"))?;
                 let value: f64 = value
                     .parse()
-                    .map_err(|_| Error::InvalidModel("bad SV feature value".into()))?;
+                    .map_err(|_| invalid_model("bad SV feature value"))?;
                 // Feature indices are 1-based and may be sparse.
                 if index > sv.len() {
                     sv.resize(index, 0.0);
@@ -81,7 +86,7 @@ impl SvrModel {
             support_vectors.push((coef, sv));
         }
         if support_vectors.is_empty() {
-            return Err(Error::InvalidModel("no support vectors".into()));
+            return Err(invalid_model("no support vectors"));
         }
         Ok(SvrModel {
             gamma,

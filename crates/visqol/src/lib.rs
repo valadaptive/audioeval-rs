@@ -39,6 +39,8 @@ mod selector;
 mod spectrogram;
 mod svr;
 
+use std::borrow::Cow;
+
 pub use audio_signal::AudioSignal;
 pub use lattice::LatticeModel;
 pub use nsim::PatchSimilarityResult;
@@ -67,7 +69,8 @@ pub enum Error {
     /// The degraded file was too short, too different, or too misaligned to
     /// score any reference patch.
     DegradedFileTooShort,
-    InvalidModel(String),
+    InvalidSVRModel(Cow<'static, str>),
+    InvalidLatticeModel(Cow<'static, str>),
 }
 
 impl std::fmt::Display for Error {
@@ -96,7 +99,8 @@ impl std::fmt::Display for Error {
                 "degraded file was too short, different, or misaligned to \
                  score any of the reference patches"
             ),
-            Error::InvalidModel(msg) => write!(f, "invalid SVR model: {msg}"),
+            Error::InvalidSVRModel(msg) => write!(f, "invalid SVR model: {msg}"),
+            Error::InvalidLatticeModel(msg) => write!(f, "invalid lattice model: {msg}"),
         }
     }
 }

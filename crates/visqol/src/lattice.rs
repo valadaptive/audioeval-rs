@@ -21,6 +21,8 @@
 //! runs under XNNPack, whose SIMD summation order differs; the resulting
 //! discrepancy is below 1e-5, far inside the 1e-4 conformance tolerance.
 
+use std::borrow::Cow;
+
 use crate::{Error, Result};
 
 const NUM_BANDS: usize = 21;
@@ -86,10 +88,15 @@ struct Reader<'a> {
     pos: usize,
 }
 
+#[inline(always)]
+fn invalid_model(msg: impl Into<Cow<'static, str>>) -> Error {
+    Error::InvalidLatticeModel(msg.into())
+}
+
 impl Reader<'_> {
     fn bytes(&mut self, n: usize) -> Result<&[u8]> {
         let end = self.pos.checked_add(n).filter(|&e| e <= self.buf.len());
-        let end = end.ok_or_else(|| Error::InvalidModel("truncated lattice model".into()))?;
+        let end = end.ok_or_else(|| invalid_model("truncated lattice model"))?;
         let s = &self.buf[self.pos..end];
         self.pos = end;
         Ok(s)
@@ -124,11 +131,11 @@ impl LatticeModel {
     pub fn from_bytes(buf: &[u8]) -> Result<Self> {
         let mut r = Reader { buf, pos: 0 };
         if r.bytes(4)? != b"VQLM" {
-            return Err(Error::InvalidModel("bad lattice model magic".into()));
+            return Err(invalid_model("bad lattice model magic"));
         }
         let version = r.u32()?;
         if version != 1 {
-            return Err(Error::InvalidModel(format!(
+            return Err(invalid_model(format!(
                 "unsupported lattice model version {version}"
             )));
         }
@@ -136,7 +143,7 @@ impl LatticeModel {
         let n_lattices = r.u32()? as usize;
         let rank = r.u32()? as usize;
         if n_features != NUM_FEATURES || rank == 0 || rank > 16 {
-            return Err(Error::InvalidModel(format!(
+            return Err(invalid_model(format!(
                 "unexpected lattice model shape ({n_features} features, rank {rank})"
             )));
         }
@@ -170,7 +177,7 @@ impl LatticeModel {
             let feature = r.u32()? as usize;
             let unit = r.u32()?;
             if feature >= n_features || unit >= calibrators[feature].n_units as u32 {
-                return Err(Error::InvalidModel("lattice wiring out of range".into()));
+                return Err(invalid_model("lattice wiring out of range"));
             }
             wiring.push(unit_offsets[feature] + unit);
         }
@@ -181,7 +188,7 @@ impl LatticeModel {
         let output_inv_lengths = r.f32s(n_out_kp)?;
         let output_kernel = r.f32s(n_out_kp + 1)?;
         if r.pos != buf.len() {
-            return Err(Error::InvalidModel("trailing lattice model data".into()));
+            return Err(invalid_model("trailing lattice model data"));
         }
 
         Ok(LatticeModel {

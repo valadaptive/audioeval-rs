@@ -235,20 +235,17 @@ fn slice(signal: &AudioSignal, start_time: f64, end_time: f64) -> AudioSignal {
 /// sub-frame precision, rebuilds both spectrograms, rescores, and keeps
 /// whichever similarity is higher.
 pub fn finely_align_and_recreate_patches(
-    sim_results: &[PatchSimilarityResult],
+    sim_results: &mut [PatchSimilarityResult],
     ref_signal: &AudioSignal,
     deg_signal: &AudioSignal,
     spect_builder: &GammatoneSpectrogramBuilder,
     window: &AnalysisWindow,
-) -> Result<Vec<PatchSimilarityResult>> {
-    let mut realigned_results = Vec::with_capacity(sim_results.len());
-
+) -> Result<()> {
     for sim_result in sim_results {
         // Skip null matches.
         if sim_result.deg_patch_start_time == sim_result.deg_patch_end_time
             && sim_result.deg_patch_start_time == 0.0
         {
-            realigned_results.push(sim_result.clone());
             continue;
         }
 
@@ -276,9 +273,7 @@ pub fn finely_align_and_recreate_patches(
 
         let mut new_sim_result =
             nsim::measure_patch_similarity(&ref_spectrogram.data, &deg_spectrogram.data);
-        if new_sim_result.similarity < sim_result.similarity {
-            realigned_results.push(sim_result.clone());
-        } else {
+        if new_sim_result.similarity >= sim_result.similarity {
             if lag > 0.0 {
                 new_sim_result.ref_patch_start_time = sim_result.ref_patch_start_time + lag;
                 new_sim_result.deg_patch_start_time = sim_result.deg_patch_start_time;
@@ -290,8 +285,8 @@ pub fn finely_align_and_recreate_patches(
                 new_sim_result.ref_patch_start_time + new_ref_duration;
             new_sim_result.deg_patch_end_time =
                 new_sim_result.deg_patch_start_time + new_deg_duration;
-            realigned_results.push(new_sim_result);
+            *sim_result = new_sim_result;
         }
     }
-    Ok(realigned_results)
+    Ok(())
 }

@@ -263,8 +263,8 @@ impl Visqol {
         // Realign the patches as time-domain subsignals starting at the
         // coarse patch times.
         if !self.disable_realignment {
-            sim_match_info = selector::finely_align_and_recreate_patches(
-                &sim_match_info,
+            selector::finely_align_and_recreate_patches(
+                &mut sim_match_info,
                 ref_signal,
                 &deg_signal,
                 &spect_builder,

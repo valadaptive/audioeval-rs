@@ -9,3 +9,6 @@ anyhow.workspace = true
 audio-io.workspace = true
 clap = { workspace = true, features = ["string"] }
 zimtohrli.workspace = true
+
+[lints]
+workspace = true

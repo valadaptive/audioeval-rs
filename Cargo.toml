@@ -36,3 +36,6 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.rustfft]
 opt-level = 2
+
+[workspace.lints]
+clippy.excessive_precision = "allow"

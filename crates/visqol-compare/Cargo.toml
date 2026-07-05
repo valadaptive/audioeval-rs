@@ -9,3 +9,6 @@ anyhow.workspace = true
 audio-io.workspace = true
 clap.workspace = true
 visqol.workspace = true
+
+[lints]
+workspace = true

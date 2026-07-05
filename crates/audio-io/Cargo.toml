@@ -9,3 +9,6 @@ anyhow.workspace = true
 audioadapter-buffers.workspace = true
 rubato.workspace = true
 symphonia = { workspace = true, features = ["all-codecs", "all-formats"] }
+
+[lints]
+workspace = true

@@ -11,7 +11,7 @@ use realfft::RealFftPlanner;
 
 pub type Complex = num_complex::Complex<f64>;
 
-pub const MIN_FFT_SIZE: usize = 32;
+const MIN_FFT_SIZE: usize = 32;
 
 // The planner caches plans (twiddle tables) by size; keep one per thread so
 // the many small per-patch FFTs during fine realignment don't re-plan.
@@ -19,14 +19,11 @@ thread_local! {
     static PLANNER: RefCell<RealFftPlanner<f64>> = RefCell::new(RealFftPlanner::new());
 }
 
-pub fn next_pow_two(n: usize) -> usize {
-    n.next_power_of_two()
-}
-
-/// Forward real FFT of `signal` zero-padded to `fft_size` (power of two).
-/// Returns the `fft_size / 2 + 1` non-redundant bins.
-pub fn rfft(signal: &[f64], fft_size: usize) -> Vec<Complex> {
-    debug_assert!(fft_size.is_power_of_two() && signal.len() <= fft_size);
+/// Forward real FFT of `signal`, zero-padded to the next power of two with a
+/// floor of 32 (the C++ `FftManager` constructor). Returns the
+/// `fft_size / 2 + 1` non-redundant bins.
+pub fn rfft(signal: &[f64]) -> Vec<Complex> {
+    let fft_size = signal.len().next_power_of_two().max(MIN_FFT_SIZE);
     let r2c = PLANNER.with_borrow_mut(|p| p.plan_fft_forward(fft_size));
     let mut input = vec![0.0; fft_size];
     input[..signal.len()].copy_from_slice(signal);
@@ -36,9 +33,11 @@ pub fn rfft(signal: &[f64], fft_size: usize) -> Vec<Complex> {
     spectrum
 }
 
-/// Inverse real FFT with the C++ `1/fft_size` scaling applied.
-pub fn irfft(spectrum: &mut [Complex], fft_size: usize) -> Vec<f64> {
-    debug_assert_eq!(spectrum.len(), fft_size / 2 + 1);
+/// Inverse real FFT with the C++ `1/fft_size` scaling applied. The transform
+/// size is implied by the spectrum length (`fft_size / 2 + 1` bins).
+pub fn irfft(spectrum: &mut [Complex]) -> Vec<f64> {
+    let fft_size = 2 * (spectrum.len() - 1);
+    debug_assert!(fft_size.is_power_of_two() && fft_size >= MIN_FFT_SIZE);
     let c2r = PLANNER.with_borrow_mut(|p| p.plan_fft_inverse(fft_size));
     let mut output = vec![0.0; fft_size];
     c2r.process(spectrum, &mut output)

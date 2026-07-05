@@ -1,31 +1,35 @@
 //! FFT cross-correlation for global alignment, a port of `xcorr.cc`.
 
-use crate::fft::{self, MIN_FFT_SIZE};
+use crate::fft;
 
 /// Returns the lag (in samples) at which `signal_2` best aligns to
 /// `signal_1`. Positive means `signal_2` is delayed relative to `signal_1`.
 pub fn find_lowest_lag_index(signal_1: &[f64], signal_2: &[f64]) -> i64 {
     let longest = signal_1.len().max(signal_2.len());
-    let max_lag = longest as i64 - 1;
+    let max_lag = longest - 1;
 
-    // The C++ derives the FFT point count with frexp(2 * len - 1): the
-    // smallest power of two strictly greater than 2 * len - 1.
-    let v = 2 * longest - 1;
-    let fft_points = 1usize << (usize::BITS - v.leading_zeros());
-    let fft_size = fft_points.max(MIN_FFT_SIZE);
+    // Linear correlation of two length-`longest` signals needs
+    // `2 * longest - 1` points; zero-extend both inputs so `rfft` picks the
+    // covering power of two (the C++ derives the same count with
+    // frexp(2 * len - 1)).
+    let padded_len = 2 * longest - 1;
+    let mut padded_1 = signal_1.to_vec();
+    padded_1.resize(padded_len, 0.0);
+    let mut padded_2 = signal_2.to_vec();
+    padded_2.resize(padded_len, 0.0);
 
-    let spec_1 = fft::rfft(signal_1, fft_size);
-    let spec_2 = fft::rfft(signal_2, fft_size);
+    let spec_1 = fft::rfft(&padded_1);
+    let spec_2 = fft::rfft(&padded_2);
     let mut product: Vec<fft::Complex> = spec_1
         .iter()
         .zip(&spec_2)
         .map(|(a, b)| a * b.conj())
         .collect();
-    let corr = fft::irfft(&mut product, fft_size);
+    let corr = fft::irfft(&mut product);
 
-    // corrs = wrapped negative lags followed by non-negative lags.
-    let max_lag = max_lag as usize;
-    let corrs = corr[fft_points - max_lag..fft_points]
+    // The wrapped negative lags sit at the end of the circular correlation,
+    // followed (from the front) by the non-negative lags.
+    let corrs = corr[corr.len() - max_lag..]
         .iter()
         .chain(&corr[..max_lag + 1]);
 

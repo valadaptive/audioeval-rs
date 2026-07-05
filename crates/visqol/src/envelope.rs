@@ -8,7 +8,7 @@
 //! two, this zeroes the Nyquist bin and doubles a bin that MATLAB's `hilbert`
 //! would treat specially.
 
-use crate::fft::{self, MIN_FFT_SIZE};
+use crate::fft;
 
 pub fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
     let n = signal.len();
@@ -16,8 +16,8 @@ pub fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
     let mean = signal.iter().sum::<f64>() / n as f64;
     let centered: Vec<f64> = signal.iter().map(|&s| s - mean).collect();
 
-    let fft_size = fft::next_pow_two(n).max(MIN_FFT_SIZE);
-    let mut spectrum = fft::rfft(&centered, fft_size);
+    let mut spectrum = fft::rfft(&centered);
+    let fft_size = 2 * (spectrum.len() - 1);
 
     // Hilbert scaling as in the C++: scaling[0] = 1, then a value at n/2
     // based on the original length's parity, then indices [1, bound) are
@@ -44,6 +44,6 @@ pub fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
     // The C++ takes the real IFFT of this spectrum (discarding the mirror
     // half), so the "analytic signal" is real-valued and the envelope is the
     // absolute value of that real signal.
-    let time = fft::irfft(&mut spectrum, fft_size);
+    let time = fft::irfft(&mut spectrum);
     time[..n].iter().map(|&v| v.abs() + mean).collect()
 }

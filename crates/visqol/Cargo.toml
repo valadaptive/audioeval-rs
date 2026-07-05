@@ -11,3 +11,8 @@ realfft.workspace = true
 
 [dev-dependencies]
 audio-io.workspace = true
+criterion = "0.8.2"
+
+[[bench]]
+name = "pipeline"
+harness = false

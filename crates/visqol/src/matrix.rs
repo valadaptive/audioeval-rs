@@ -65,15 +65,6 @@ impl Matrix {
         &mut self.data[col * self.rows..(col + 1) * self.rows]
     }
 
-    pub fn set_col(&mut self, col: usize, values: &[f64]) {
-        assert_eq!(values.len(), self.rows);
-        self.col_mut(col).copy_from_slice(values);
-    }
-
-    pub fn row(&self, row: usize) -> Vec<f64> {
-        (0..self.cols).map(|c| self.at(row, c)).collect()
-    }
-
     pub fn set_row(&mut self, row: usize, values: &[f64]) {
         assert_eq!(values.len(), self.cols);
         for (c, &v) in values.iter().enumerate() {

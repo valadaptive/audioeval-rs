@@ -115,6 +115,14 @@ fn conv2d_with_boundary(input: &Matrix) -> Matrix {
 /// [`conv2d_with_boundary`] with caller-provided buffers, for use in per-cell
 /// loops. `padded` must be `input`'s size plus 2 in both dimensions; `out`
 /// must be `input`'s size. Every cell of both buffers is overwritten.
+///
+/// The nine taps of each output cell are accumulated one at a time in the
+/// same descending-filter-index order as the C++, so results are
+/// bit-identical to the naive nested-loop form; different output cells are
+/// independent, which lets the compiler vectorize down each column.
+/// `inline(always)` so the [`multiversion`] wrapper around
+/// [`similarity_at_offset`] can compile it for wider register files.
+#[inline(always)]
 fn conv2d_with_boundary_into(input: &Matrix, padded: &mut Matrix, out: &mut Matrix) {
     add_matrix_boundary_into(input, padded);
 
@@ -123,17 +131,22 @@ fn conv2d_with_boundary_into(input: &Matrix, padded: &mut Matrix, out: &mut Matr
     let o_c_c = out.cols();
 
     for o_col in 0..o_c_c {
+        let cols = &padded.data()[o_col * i_r_c..(o_col + 3) * i_r_c];
+        let (col0, rest) = cols.split_at(i_r_c);
+        let (col1, col2) = rest.split_at(i_r_c);
+        let out_col = &mut out.col_mut(o_col)[..o_r_c];
         for o_row in 0..o_r_c {
             let mut sum = 0.0;
-            let mut filter_index = 9;
-            for f_col in 0..3 {
-                for f_row in 0..3 {
-                    filter_index -= 1;
-                    let idx = (f_col + o_col) * i_r_c + f_row + o_row;
-                    sum += padded.flat(idx) * WINDOW[filter_index];
-                }
-            }
-            out.set(o_row, o_col, sum);
+            sum += col0[o_row] * WINDOW[8];
+            sum += col0[o_row + 1] * WINDOW[7];
+            sum += col0[o_row + 2] * WINDOW[6];
+            sum += col1[o_row] * WINDOW[5];
+            sum += col1[o_row + 1] * WINDOW[4];
+            sum += col1[o_row + 2] * WINDOW[3];
+            sum += col2[o_row] * WINDOW[2];
+            sum += col2[o_row + 1] * WINDOW[1];
+            sum += col2[o_row + 2] * WINDOW[0];
+            out_col[o_row] = sum;
         }
     }
 }
@@ -141,20 +154,21 @@ fn conv2d_with_boundary_into(input: &Matrix, padded: &mut Matrix, out: &mut Matr
 /// Pads by one cell on every side, replicating edge rows first and then edge
 /// columns (which fills the corners from the row-replicated matrix). Writes
 /// every cell of `out`.
+#[inline(always)]
 fn add_matrix_boundary_into(input: &Matrix, out: &mut Matrix) {
+    let rows = input.rows();
     for c in 0..input.cols() {
-        for r in 0..input.rows() {
-            out.set(r + 1, c + 1, input.at(r, c));
-        }
+        let out_col = out.col_mut(c + 1);
+        out_col[1..=rows].copy_from_slice(input.col(c));
+        out_col[0] = out_col[1];
+        out_col[rows + 1] = out_col[rows];
     }
-    let row_1 = out.row(1);
-    out.set_row(0, &row_1);
-    let row_last = out.row(out.rows() - 2);
-    out.set_row(out.rows() - 1, &row_last);
-    let col_1 = out.col(1).to_vec();
-    out.set_col(0, &col_1);
-    let col_last = out.col(out.cols() - 2).to_vec();
-    out.set_col(out.cols() - 1, &col_last);
+    let padded_rows = rows + 2;
+    let last_col = out.cols() - 1;
+    let (first, rest) = out.data_mut().split_at_mut(padded_rows);
+    first.copy_from_slice(&rest[..padded_rows]);
+    let (rest, last) = out.data_mut().split_at_mut(last_col * padded_rows);
+    last.copy_from_slice(&rest[(last_col - 1) * padded_rows..]);
 }
 
 /// The DTW-style patch search evaluates NSIM between each reference patch and
@@ -300,7 +314,25 @@ impl NsimScratch {
 /// between `ref_patch` and the degraded patch starting at `offset`, which
 /// must lie fully inside the spectrogram. Produces bit-identical results
 /// while only performing the cross-term convolution per call.
+///
+/// This is the DP search's inner loop, so the work is dispatched through
+/// [`multiversion`] to vectorize with whatever the CPU offers.
 pub fn similarity_at_offset(
+    ref_patch: &Matrix,
+    ref_conv: &RefPatchConv,
+    spectrogram: &Matrix,
+    deg_conv: &DegSpectrogramConv,
+    offset: usize,
+    scratch: &mut NsimScratch,
+) -> f64 {
+    multiversion::multiversion(
+        #[inline(always)]
+        || similarity_at_offset_impl(ref_patch, ref_conv, spectrogram, deg_conv, offset, scratch),
+    )
+}
+
+#[inline(always)]
+fn similarity_at_offset_impl(
     ref_patch: &Matrix,
     ref_conv: &RefPatchConv,
     spectrogram: &Matrix,
@@ -318,15 +350,11 @@ pub fn similarity_at_offset(
 
     // conv(ref ∘ deg), the one convolution that changes per cell.
     for c in 0..width {
-        let deg_col = spectrogram.col(offset + c);
-        let ref_col = ref_patch.col(c);
-        for (p, (&a, &b)) in scratch
-            .product
-            .col_mut(c)
-            .iter_mut()
-            .zip(ref_col.iter().zip(deg_col))
-        {
-            *p = a * b;
+        let deg_col = &spectrogram.col(offset + c)[..rows];
+        let ref_col = &ref_patch.col(c)[..rows];
+        let prod_col = &mut scratch.product.col_mut(c)[..rows];
+        for r in 0..rows {
+            prod_col[r] = ref_col[r] * deg_col[r];
         }
     }
     conv2d_with_boundary_into(&scratch.product, &mut scratch.padded, &mut scratch.conv);
@@ -334,6 +362,7 @@ pub fn similarity_at_offset(
     // The similarity map, reduced per row in the same order as
     // `measure_patch_similarity` (columns outer, then a mean of row means).
     scratch.row_sums.fill(0.0);
+    let row_sums = &mut scratch.row_sums[..rows];
     for c in 0..width {
         let (mu_d_col, sigma_d_col) = if c == 0 {
             (
@@ -351,9 +380,11 @@ pub fn similarity_at_offset(
                 deg_conv.sigma_sq.col(offset + c),
             )
         };
-        let mu_r_col = ref_conv.mu.col(c);
-        let sigma_r_col = ref_conv.sigma_sq.col(c);
-        let conv_rd_col = scratch.conv.col(c);
+        let mu_d_col = &mu_d_col[..rows];
+        let sigma_d_col = &sigma_d_col[..rows];
+        let mu_r_col = &ref_conv.mu.col(c)[..rows];
+        let sigma_r_col = &ref_conv.sigma_sq.col(c)[..rows];
+        let conv_rd_col = &scratch.conv.col(c)[..rows];
         for r in 0..rows {
             let mu_r = mu_r_col[r];
             let mu_d = mu_d_col[r];
@@ -361,13 +392,16 @@ pub fn similarity_at_offset(
             let intensity = (2.0 * mu_r_mu_d + c1) / (mu_r * mu_r + mu_d * mu_d + c1);
             let sigma_r_d = conv_rd_col[r] - mu_r_mu_d;
             let sigma_prod = sigma_r_col[r] * sigma_d_col[r];
+            // Written as an unconditional sqrt plus a select so the loop
+            // vectorizes: sqrt of a negative is NaN, but that lane picks the
+            // bare c3, exactly like the branchy form.
             let structure_denom = if sigma_prod < 0.0 {
                 c3
             } else {
                 sigma_prod.sqrt() + c3
             };
             let structure = (sigma_r_d + c3) / structure_denom;
-            scratch.row_sums[r] += intensity * structure;
+            row_sums[r] += intensity * structure;
         }
     }
 

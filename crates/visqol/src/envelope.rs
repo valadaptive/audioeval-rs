@@ -4,9 +4,11 @@
 //! The C++ version has a quirk that we reproduce faithfully: the analytic
 //! signal's one-sided scaling vector is built with indices based on the
 //! *original* signal length, but applied to a spectrum whose length is the
-//! (possibly larger) power-of-two FFT size. When the length is not a power of
-//! two, this zeroes the Nyquist bin and doubles a bin that MATLAB's `hilbert`
-//! would treat specially.
+//! (possibly larger) power-of-two FFT size. Because the parity-based bound
+//! is dead (the FFT size is even) and the n/2 entry always falls inside the
+//! 2.0 run, the net effect is exactly one bin: for a non-power-of-two length
+//! the padded spectrum's Nyquist bin is weighted 0 instead of MATLAB
+//! `hilbert`'s 1.
 
 use crate::fft;
 
@@ -19,23 +21,12 @@ pub fn calc_upper_env(signal: &[f64]) -> Vec<f64> {
     let mut spectrum = fft::rfft(&centered);
     let fft_size = 2 * (spectrum.len() - 1);
 
-    // Hilbert scaling as in the C++: scaling[0] = 1, then a value at n/2
-    // based on the original length's parity, then indices [1, bound) are
-    // set to 2 (overwriting the n/2 entry whenever n/2 < bound).
-    let mut scaling = vec![0.0; fft_size / 2 + 1];
+    // Hilbert scaling with the C++ quirk described in the module docs: the
+    // Nyquist bin keeps weight 1 only when the signal length already is the
+    // FFT size.
+    let mut scaling = vec![2.0; fft_size / 2 + 1];
     scaling[0] = 1.0;
-    let is_odd = n % 2 == 1;
-    if n / 2 < scaling.len() {
-        scaling[n / 2] = if is_odd { 2.0 } else { 1.0 };
-    }
-    let bound = if is_odd {
-        fft_size.div_ceil(2)
-    } else {
-        fft_size / 2
-    };
-    for s in &mut scaling[1..bound] {
-        *s = 2.0;
-    }
+    scaling[fft_size / 2] = if n == fft_size { 1.0 } else { 0.0 };
 
     for (bin, &s) in spectrum.iter_mut().zip(&scaling) {
         *bin *= s;

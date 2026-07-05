@@ -41,50 +41,50 @@ pub fn measure_patch_similarity(ref_patch: &Matrix, deg_patch: &Matrix) -> Patch
     let c1 = (0.01 * INTENSITY_RANGE).powi(2);
     let c3 = (0.03 * INTENSITY_RANGE).powi(2) / 2.0;
 
-    let mu_r = conv2d_with_boundary(ref_patch);
-    let mu_d = conv2d_with_boundary(deg_patch);
+    let rows = ref_patch.rows();
+    let cols = ref_patch.cols();
+    debug_assert_eq!((rows, cols), (deg_patch.rows(), deg_patch.cols()));
 
-    let pointwise = |a: &Matrix, b: &Matrix, f: fn(f64, f64) -> f64| {
-        let mut out = Matrix::zeros(a.rows(), a.cols());
-        for ((o, &x), &y) in out.data_mut().iter_mut().zip(a.data()).zip(b.data()) {
-            *o = f(x, y);
+    // The five convolutions share one padding buffer, and the three
+    // elementwise products share one input buffer.
+    let mut padded = Matrix::zeros(rows + 2, cols + 2);
+    let mut product = Matrix::zeros(rows, cols);
+    let mut mu_r = Matrix::zeros(rows, cols);
+    let mut mu_d = Matrix::zeros(rows, cols);
+    let mut conv_rr = Matrix::zeros(rows, cols);
+    let mut conv_dd = Matrix::zeros(rows, cols);
+    let mut conv_rd = Matrix::zeros(rows, cols);
+
+    conv2d_with_boundary_into(ref_patch, &mut padded, &mut mu_r);
+    conv2d_with_boundary_into(deg_patch, &mut padded, &mut mu_d);
+    let mut conv_of_product = |a: &Matrix, b: &Matrix, out: &mut Matrix| {
+        for ((p, &x), &y) in product.data_mut().iter_mut().zip(a.data()).zip(b.data()) {
+            *p = x * y;
         }
-        out
+        conv2d_with_boundary_into(&product, &mut padded, out);
     };
-    let mul = |a: &Matrix, b: &Matrix| pointwise(a, b, |x, y| x * y);
+    conv_of_product(ref_patch, ref_patch, &mut conv_rr);
+    conv_of_product(deg_patch, deg_patch, &mut conv_dd);
+    conv_of_product(ref_patch, deg_patch, &mut conv_rd);
 
-    let ref_mu_sq = mul(&mu_r, &mu_r);
-    let deg_mu_sq = mul(&mu_d, &mu_d);
-    let mu_r_mu_d = mul(&mu_r, &mu_d);
-
-    let sigma_r_sq = pointwise(
-        &conv2d_with_boundary(&mul(ref_patch, ref_patch)),
-        &ref_mu_sq,
-        |x, y| x - y,
-    );
-    let sigma_d_sq = pointwise(
-        &conv2d_with_boundary(&mul(deg_patch, deg_patch)),
-        &deg_mu_sq,
-        |x, y| x - y,
-    );
-    let sigma_r_d = pointwise(
-        &conv2d_with_boundary(&mul(ref_patch, deg_patch)),
-        &mu_r_mu_d,
-        |x, y| x - y,
-    );
-
-    let mut sim_map = Matrix::zeros(ref_patch.rows(), ref_patch.cols());
+    // Each similarity cell needs only the five convolution values at the same
+    // index, so the map is written over the cross-term buffer in place.
+    let mut sim_map = conv_rd;
     for i in 0..sim_map.data().len() {
-        let intensity = (2.0 * mu_r_mu_d[i] + c1) / (ref_mu_sq[i] + deg_mu_sq[i] + c1);
+        let mu_r_mu_d = mu_r[i] * mu_d[i];
+        let intensity = (2.0 * mu_r_mu_d + c1) / (mu_r[i] * mu_r[i] + mu_d[i] * mu_d[i] + c1);
+        let sigma_r_sq = conv_rr[i] - mu_r[i] * mu_r[i];
+        let sigma_d_sq = conv_dd[i] - mu_d[i] * mu_d[i];
+        let sigma_r_d = sim_map[i] - mu_r_mu_d;
         // Negative variances can occur for silent patches due to precision;
         // the C++ replaces the sqrt with zero in that case.
-        let sigma_prod = sigma_r_sq[i] * sigma_d_sq[i];
+        let sigma_prod = sigma_r_sq * sigma_d_sq;
         let structure_denom = if sigma_prod < 0.0 {
             c3
         } else {
             sigma_prod.sqrt() + c3
         };
-        let structure = (sigma_r_d[i] + c3) / structure_denom;
+        let structure = (sigma_r_d + c3) / structure_denom;
         sim_map.data_mut()[i] = intensity * structure;
     }
 

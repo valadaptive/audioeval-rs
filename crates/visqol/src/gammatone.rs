@@ -173,13 +173,12 @@ impl GammatoneSpectrogramBuilder {
         }
         let num_cols = 1 + (signal.samples.len() - window.size) / hop_size;
 
-        let hann = window.hann_window();
         let mut out = Matrix::zeros(self.num_bands, num_cols);
         let mut windowed = vec![0.0; window.size];
         for col in 0..num_cols {
             let start = col * hop_size;
             let frame = &signal.samples[start..start + window.size];
-            for ((w, &h), &x) in windowed.iter_mut().zip(&hann).zip(frame) {
+            for ((w, &h), &x) in windowed.iter_mut().zip(&window.hann_window).zip(frame) {
                 *w = h * x;
             }
             multiversion::multiversion(

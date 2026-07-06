@@ -16,7 +16,7 @@
 
 use crate::analysis_window::AnalysisWindow;
 use crate::audio_signal::AudioSignal;
-use crate::erb;
+use crate::erb::{self, ErbFilters};
 use crate::matrix::Matrix;
 use crate::spectrogram::Spectrogram;
 use crate::{Error, Result};
@@ -27,8 +27,8 @@ const STAGES: usize = 4;
 
 pub struct GammatoneSpectrogramBuilder {
     num_bands: usize,
-    min_freq: f64,
-    speech_mode: bool,
+    filters: ErbFilters,
+    groups: Vec<BandGroup<8>>,
 }
 
 /// Filter coefficients for a group of up to `LANES` bands, one band per lane.
@@ -143,25 +143,25 @@ fn rms_into<const LANES: usize>(groups: &[BandGroup<LANES>], frame: &[f64], out:
 }
 
 impl GammatoneSpectrogramBuilder {
-    pub fn new(num_bands: usize, min_freq: f64, speech_mode: bool) -> Self {
-        GammatoneSpectrogramBuilder {
-            num_bands,
-            min_freq,
-            speech_mode,
-        }
-    }
-
-    pub fn build(&self, signal: &AudioSignal, window: &AnalysisWindow) -> Result<Spectrogram> {
-        let sample_rate = signal.sample_rate as f64;
-        let max_freq = if self.speech_mode {
+    pub fn new(num_bands: usize, sample_rate: u32, min_freq: f64, speech_mode: bool) -> Self {
+        let sample_rate = sample_rate as f64;
+        let max_freq = if speech_mode {
             SPEECH_MODE_MAX_FREQ
         } else {
             sample_rate / 2.0
         };
 
-        let filters = erb::make_filters(sample_rate, self.num_bands, self.min_freq, max_freq);
+        let filters = erb::make_filters(sample_rate, num_bands, min_freq, max_freq);
         let groups = build_groups::<8>(&filters);
 
+        GammatoneSpectrogramBuilder {
+            num_bands,
+            filters,
+            groups,
+        }
+    }
+
+    pub fn build(&self, signal: &AudioSignal, window: &AnalysisWindow) -> Result<Spectrogram> {
         let hop_size = (window.size as f64 * window.overlap) as usize;
         if signal.samples.len() <= window.size {
             return Err(Error::TooFewSamples {
@@ -181,12 +181,12 @@ impl GammatoneSpectrogramBuilder {
             }
             multiversion::multiversion(
                 #[inline(always)]
-                || rms_into(&groups, &windowed, out.col_mut(col)),
+                || rms_into(&self.groups, &windowed, out.col_mut(col)),
             );
         }
 
         // Center frequencies ordered lowest to highest.
-        let center_freq_bands: Vec<f64> = filters.center_freqs.iter().rev().copied().collect();
+        let center_freq_bands: Vec<f64> = self.filters.center_freqs.iter().rev().copied().collect();
         Ok(Spectrogram::new(out, center_freq_bands))
     }
 }

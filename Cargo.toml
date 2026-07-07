@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/audio-io",
-    "crates/multiversion",
+    "crates/multiversion-lite",
     "crates/visqol",
     "crates/visqol-compare",
     "crates/zimtohrli",
@@ -11,7 +11,7 @@ members = [
 
 [workspace.dependencies]
 audio-io = { path = "crates/audio-io" }
-multiversion = { path = "crates/multiversion" }
+multiversion-lite = { path = "crates/multiversion-lite" }
 visqol = { path = "crates/visqol" }
 zimtohrli = { path = "crates/zimtohrli" }
 

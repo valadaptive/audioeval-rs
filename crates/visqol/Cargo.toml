@@ -5,7 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-multiversion.workspace = true
+multiversion-lite.workspace = true
 num-complex.workspace = true
 realfft.workspace = true
 

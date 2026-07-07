@@ -179,7 +179,7 @@ impl GammatoneSpectrogramBuilder {
             for ((w, &h), &x) in windowed.iter_mut().zip(&window.hann_window).zip(frame) {
                 *w = h * x;
             }
-            multiversion::multiversion(
+            multiversion_lite::multiversion(
                 #[inline(always)]
                 || rms_into(&self.groups, &windowed, out.col_mut(col)),
             );
@@ -241,7 +241,7 @@ mod tests {
         let frame = test_frame();
 
         let mut out = vec![0.0; 32];
-        multiversion::multiversion(
+        multiversion_lite::multiversion(
             #[inline(always)]
             || rms_into(&groups, &frame, &mut out),
         );

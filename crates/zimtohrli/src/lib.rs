@@ -2,7 +2,7 @@
 //! library from C++ to Rust.
 
 use libm::{cosf, exp, expf, logf, pow, powf, sinf};
-use multiversion::multiversion;
+use multiversion_lite::multiversion;
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},

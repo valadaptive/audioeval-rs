@@ -308,7 +308,7 @@ pub fn similarity_at_offset(
     offset: usize,
     scratch: &mut NsimScratch,
 ) -> f64 {
-    multiversion::multiversion(
+    multiversion_lite::multiversion(
         #[inline(always)]
         || similarity_at_offset_impl(ref_patch, ref_conv, spectrogram, deg_conv, offset, scratch),
     )

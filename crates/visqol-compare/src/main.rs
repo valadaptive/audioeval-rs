@@ -111,7 +111,7 @@ fn main() -> Result<()> {
         if *matches.get_one::<bool>("use_lattice_model").unwrap() {
             Visqol::speech_lattice()
         } else {
-            Visqol::speech_legacy(!matches.get_flag("use_unscaled_speech_mos_mapping"))
+            Visqol::speech_legacy(matches.get_flag("use_unscaled_speech_mos_mapping"))
         }
     } else {
         match matches.get_one::<PathBuf>("similarity_to_quality_model") {
@@ -127,6 +127,9 @@ fn main() -> Result<()> {
     visqol.disable_global_alignment = matches.get_flag("disable_global_alignment");
     visqol.disable_realignment = matches.get_flag("disable_realignment");
     let disable_resample = matches.get_flag("disable_resample");
+    // Without resampling the input may not be 48 kHz; the CLI warns about that
+    // below rather than refusing to run, so let audio mode accept it.
+    visqol.allow_unsupported_sample_rates = disable_resample;
 
     let load = |path: &PathBuf| -> Result<AudioSignal> {
         let (rate, file) = if disable_resample {

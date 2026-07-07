@@ -1,8 +1,10 @@
 # visqol
 
+<!-- This README is generated via https://crates.io/crates/cargo-rdme. Edit the crate-level docs and regenerate this README via `cargo rdme`. -->
+
 <!-- cargo-rdme start -->
 
-A pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3, an objective, full-reference metric for perceived audio quality.
+A pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3.3, an objective, full-reference metric for perceived audio quality.
 
 ```rust
 use visqol::{AudioSignal, Visqol};
@@ -21,6 +23,17 @@ The entry points you're most likely to want are:
 The inputs are expected to be mono signals. You may use `AudioSignal::from_channels` to downmix by averaging, as with the C++ version.
 
 This crate will *not* resample your audio for you. You must use something like [rubato](https://crates.io/crates/rubato) to resample the input before passing it in.
+
+### Mapping from the C++ configuration
+
+Here's where each `VisqolConfig.options` field lands:
+
+- `use_speech_scoring` + `use_lattice_model`: Choose a constructor. [`Visqol::audio()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.audio) (audio, SVR), [`Visqol::speech_lattice()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_lattice) (speech, lattice), or [`Visqol::speech_legacy()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_legacy) (speech, exponential fit).
+- `use_unscaled_speech_mos_mapping`: Passed as a `bool` argument to [`Visqol::speech_legacy()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_legacy).
+- `svr_model_path`: [`Visqol::audio_with_model()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.audio_with_model), which is passed an [`SvrModel`](https://docs.rs/visqol/latest/visqol/svr/struct.SvrModel.html). You may load one via [`SvrModel::from_text()`](https://docs.rs/visqol/latest/visqol/svr/struct.SvrModel.html#method.from_text).
+- `search_window_radius`: [`Visqol::search_window_radius`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#structfield.search_window_radius).
+- `allow_unsupported_sample_rates`: [`Visqol::allow_unsupported_sample_rates`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#structfield.allow_unsupported_sample_rates).
+- `output_mos_score` + `detect_voice_activity`: Not supported. Even in the original C++ version, these are unimplemented no-ops.
 
 ### Conformance
 

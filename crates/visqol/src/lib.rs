@@ -18,6 +18,17 @@
 //!
 //! This crate will *not* resample your audio for you. You must use something like [rubato](https://crates.io/crates/rubato) to resample the input before passing it in.
 //!
+//! ## Mapping from the C++ configuration
+//!
+//! Here's where each `VisqolConfig.options` field lands:
+//!
+//! - `use_speech_scoring` + `use_lattice_model`: Choose a constructor. [`Visqol::audio()`] (audio, SVR), [`Visqol::speech_lattice()`] (speech, lattice), or [`Visqol::speech_legacy()`] (speech, exponential fit).
+//! - `use_unscaled_speech_mos_mapping`: Passed as a `bool` argument to [`Visqol::speech_legacy()`].
+//! - `svr_model_path`: [`Visqol::audio_with_model()`], which is passed an [`SvrModel`]. You may load one via [`SvrModel::from_text()`].
+//! - `search_window_radius`: [`Visqol::search_window_radius`].
+//! - `allow_unsupported_sample_rates`: [`Visqol::allow_unsupported_sample_rates`].
+//! - `output_mos_score` + `detect_voice_activity`: Not supported. Even in the original C++ version, these are unimplemented no-ops.
+//!
 //! ## Conformance
 //!
 //! This crate's results are compared against the upstream conformance test suite. We test against [conformance version 333](https://github.com/google/visqol/blob/38d0b01/src/include/conformance.h#L30).
@@ -58,6 +69,12 @@ pub enum Error {
         reference: u32,
         degraded: u32,
     },
+    /// Audio mode was given input at a sample rate other than 48 kHz without
+    /// [`allow_unsupported_sample_rates`](Visqol::allow_unsupported_sample_rates)
+    /// being set.
+    UnsupportedSampleRate {
+        sample_rate: u32,
+    },
     /// A signal is shorter than a single analysis window.
     TooFewSamples {
         samples: usize,
@@ -85,6 +102,11 @@ impl std::fmt::Display for Error {
                 f,
                 "input audio signals have different sample rates \
                  (reference: {reference} Hz, degraded: {degraded} Hz)"
+            ),
+            Error::UnsupportedSampleRate { sample_rate } => write!(
+                f,
+                "audio mode only supports 48 kHz input, but got {sample_rate} Hz \
+                 (set allow_unsupported_sample_rates to override)"
             ),
             Error::TooFewSamples { samples, required } => write!(
                 f,
@@ -146,6 +168,11 @@ pub struct Visqol {
     pub search_window_radius: usize,
     pub disable_global_alignment: bool,
     pub disable_realignment: bool,
+    /// By default, audio mode rejects any input that isn't 48 kHz (the only
+    /// sample rate its model was trained for). Set this to run it anyway, as
+    /// with the C++ `allow_unsupported_sample_rates` flag. Speech mode is
+    /// unaffected either way.
+    pub allow_unsupported_sample_rates: bool,
 }
 
 const PATCH_SIZE_AUDIO: usize = 30;
@@ -169,6 +196,7 @@ impl Visqol {
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            allow_unsupported_sample_rates: false,
             fft_manager: FftManager::default(),
         }
     }
@@ -182,22 +210,27 @@ impl Visqol {
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            allow_unsupported_sample_rates: false,
             fft_manager: FftManager::default(),
         }
     }
 
     /// Speech mode (16 kHz input expected): voice-activity-gated patches and
     /// the exponential NSIM-to-MOS mapping (`--use_lattice_model=false`).
-    /// `scale_to_max_mos` rescales the fit so that a perfect NSIM maps to a MOS
-    /// of 5.0 rather than ~4.x (enabled by default in the CLI unless
-    /// `--use_unscaled_speech_mos_mapping` is set).
-    pub fn speech_legacy(scale_to_max_mos: bool) -> Self {
+    ///
+    /// When `use_unscaled_speech_mos_mapping` is `false` (the default), the fit
+    /// is rescaled so that a perfect NSIM maps to a MOS of 5.0; when `true`, a
+    /// perfect NSIM instead maps to the unscaled ~4.x.
+    pub fn speech_legacy(use_unscaled_speech_mos_mapping: bool) -> Self {
         Visqol {
-            mapper: SimilarityToQualityMapper::SpeechExponential { scale_to_max_mos },
+            mapper: SimilarityToQualityMapper::SpeechExponential {
+                use_unscaled_speech_mos_mapping,
+            },
             speech_mode: true,
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
+            allow_unsupported_sample_rates: false,
             fft_manager: FftManager::default(),
         }
     }
@@ -212,6 +245,18 @@ impl Visqol {
             return Err(Error::SampleRateMismatch {
                 reference: ref_signal.sample_rate,
                 degraded: deg_signal.sample_rate,
+            });
+        }
+
+        // Audio mode's model was trained on 48 kHz only. Speech mode is
+        // purportedly sample-rate-independent (its bands are pinned to fixed
+        // frequencies).
+        if !self.speech_mode
+            && ref_signal.sample_rate != 48000
+            && !self.allow_unsupported_sample_rates
+        {
+            return Err(Error::UnsupportedSampleRate {
+                sample_rate: ref_signal.sample_rate,
             });
         }
 
@@ -394,7 +439,9 @@ pub enum SimilarityToQualityMapper {
     Lattice(crate::lattice::LatticeModel),
     /// Speech mode with `--use_lattice_model=false`: exponential fit of mean
     /// NSIM over the TCD-VOIP dataset.
-    SpeechExponential { scale_to_max_mos: bool },
+    SpeechExponential {
+        use_unscaled_speech_mos_mapping: bool,
+    },
 }
 
 impl SimilarityToQualityMapper {
@@ -410,7 +457,9 @@ impl SimilarityToQualityMapper {
             SimilarityToQualityMapper::Lattice(model) => {
                 model.predict(fvnsim, fvnsim10, fstdnsim, fvdegenergy)
             }
-            SimilarityToQualityMapper::SpeechExponential { scale_to_max_mos } => {
+            SimilarityToQualityMapper::SpeechExponential {
+                use_unscaled_speech_mos_mapping,
+            } => {
                 const FIT_PARAMETER_A: f64 = -262.847869;
                 const FIT_PARAMETER_B: f64 = 0.0154302525;
                 const FIT_PARAMETER_X0: f64 = -361.063949;
@@ -421,7 +470,11 @@ impl SimilarityToQualityMapper {
                 let nsim_mean = fvnsim.iter().sum::<f64>() / fvnsim.len() as f64;
                 let mos =
                     FIT_PARAMETER_A + (FIT_PARAMETER_B * (nsim_mean - FIT_PARAMETER_X0)).exp();
-                let scale = if *scale_to_max_mos { FIT_SCALE } else { 1.0 };
+                let scale = if *use_unscaled_speech_mos_mapping {
+                    1.0
+                } else {
+                    FIT_SCALE
+                };
                 (mos * scale).clamp(1.0, 5.0)
             }
         }

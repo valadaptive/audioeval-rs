@@ -5,9 +5,9 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
-multiversion-lite.workspace = true
 num-complex.workspace = true
 realfft.workspace = true
+fearless_simd.workspace = true
 
 [dev-dependencies]
 audio-io.workspace = true

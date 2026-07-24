@@ -2,6 +2,8 @@
 //! spectrogram patches. Ports of `neurogram_similiarity_index_measure.cc` and
 //! `convolution_2d.cc`.
 
+use fearless_simd::{Level, dispatch};
+
 use crate::matrix::Matrix;
 
 /// Per-patch similarity statistics plus the matched patches' time bounds.
@@ -301,6 +303,7 @@ impl NsimScratch {
 /// This is the DP search's inner loop, so the work is dispatched through
 /// [`multiversion`] to vectorize with whatever the CPU offers.
 pub fn similarity_at_offset(
+    level: Level,
     ref_patch: &Matrix,
     ref_conv: &RefPatchConv,
     spectrogram: &Matrix,
@@ -308,10 +311,7 @@ pub fn similarity_at_offset(
     offset: usize,
     scratch: &mut NsimScratch,
 ) -> f64 {
-    multiversion_lite::multiversion(
-        #[inline(always)]
-        || similarity_at_offset_impl(ref_patch, ref_conv, spectrogram, deg_conv, offset, scratch),
-    )
+    dispatch!(level, _ => similarity_at_offset_impl(ref_patch, ref_conv, spectrogram, deg_conv, offset, scratch))
 }
 
 #[inline(always)]
@@ -420,6 +420,7 @@ mod tests {
                 let deg_patch = spectrogram.get_cols(offset..offset + width);
                 let expected = measure_patch_similarity(&ref_patch, &deg_patch).similarity;
                 let actual = similarity_at_offset(
+                    Level::new(),
                     &ref_patch,
                     &ref_conv,
                     &spectrogram,

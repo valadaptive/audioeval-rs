@@ -163,6 +163,7 @@ pub struct Visqol {
     mapper: SimilarityToQualityMapper,
     fft_manager: FftManager,
     speech_mode: bool,
+    simd_level: fearless_simd::Level,
     /// How many patch-lengths on either side of a reference patch's position
     /// the matching search may look.
     pub search_window_radius: usize,
@@ -193,6 +194,7 @@ impl Visqol {
         Visqol {
             mapper: SimilarityToQualityMapper::Svr(model),
             speech_mode: false,
+            simd_level: fearless_simd::Level::new(),
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
@@ -207,6 +209,7 @@ impl Visqol {
         Visqol {
             mapper: SimilarityToQualityMapper::Lattice(LatticeModel::default_speech_model()),
             speech_mode: true,
+            simd_level: fearless_simd::Level::new(),
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
@@ -227,6 +230,7 @@ impl Visqol {
                 use_unscaled_speech_mos_mapping,
             },
             speech_mode: true,
+            simd_level: fearless_simd::Level::new(),
             search_window_radius: DEFAULT_SEARCH_WINDOW_RADIUS,
             disable_global_alignment: false,
             disable_realignment: false,
@@ -283,8 +287,8 @@ impl Visqol {
             MINIMUM_FREQ,
             self.speech_mode,
         );
-        let mut ref_spectrogram = spect_builder.build(ref_signal, &window)?;
-        let mut deg_spectrogram = spect_builder.build(&deg_signal, &window)?;
+        let mut ref_spectrogram = spect_builder.build(self.simd_level, ref_signal, &window)?;
+        let mut deg_spectrogram = spect_builder.build(self.simd_level, &deg_signal, &window)?;
         spectrogram::prepare_spectrograms_for_comparison(
             &mut ref_spectrogram,
             &mut deg_spectrogram,
@@ -308,6 +312,7 @@ impl Visqol {
             return Err(Error::DegradedFileTooShort);
         }
         let mut sim_match_info = selector::find_most_optimal_deg_patches(
+            self.simd_level,
             &ref_patches,
             &ref_patch_indices,
             &deg_spectrogram.data,
@@ -319,6 +324,7 @@ impl Visqol {
         // coarse patch times.
         if !self.disable_realignment {
             selector::finely_align_and_recreate_patches(
+                self.simd_level,
                 &self.fft_manager,
                 &mut sim_match_info,
                 ref_signal,

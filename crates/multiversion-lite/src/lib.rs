@@ -45,7 +45,6 @@ pub fn multiversion<R, F: FnOnce() -> R>(func: F) -> R {
     doit_baseline(func)
 }
 
-
 #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 #[inline(always)]
 fn x86_64_arch_level() -> usize {

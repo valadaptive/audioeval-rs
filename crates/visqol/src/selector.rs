@@ -4,6 +4,8 @@
 
 use std::ops::Range;
 
+use fearless_simd::Level;
+
 use crate::alignment;
 use crate::analysis_window::AnalysisWindow;
 use crate::audio_signal::AudioSignal;
@@ -14,6 +16,7 @@ use crate::spectrogram;
 use crate::{Error, Result};
 
 pub fn find_most_optimal_deg_patches(
+    level: Level,
     ref_patches: &[Matrix],
     ref_patch_indices: &[usize],
     spectrogram_data: &Matrix,
@@ -56,6 +59,7 @@ pub fn find_most_optimal_deg_patches(
             let mut similarity = if slide_offset + num_frames_per_patch <= num_frames_in_deg_spectro
             {
                 nsim::similarity_at_offset(
+                    level,
                     ref_patch,
                     &ref_conv,
                     spectrogram_data,
@@ -230,6 +234,7 @@ fn slice(signal: &AudioSignal, start_time: f64, end_time: f64) -> AudioSignal {
 /// sub-frame precision, rebuilds both spectrograms, rescores, and keeps
 /// whichever similarity is higher.
 pub fn finely_align_and_recreate_patches(
+    level: fearless_simd::Level,
     fft_manager: &alignment::FftManager,
     sim_results: &mut [PatchSimilarityResult],
     ref_signal: &AudioSignal,
@@ -260,8 +265,8 @@ pub fn finely_align_and_recreate_patches(
         let new_ref_duration = ref_patch_audio.duration();
         let new_deg_duration = deg_patch_audio.duration();
 
-        let mut ref_spectrogram = spect_builder.build(&ref_patch_audio, window)?;
-        let mut deg_spectrogram = spect_builder.build(&deg_patch_audio, window)?;
+        let mut ref_spectrogram = spect_builder.build(level, &ref_patch_audio, window)?;
+        let mut deg_spectrogram = spect_builder.build(level, &deg_patch_audio, window)?;
         spectrogram::prepare_spectrograms_for_comparison(
             &mut ref_spectrogram,
             &mut deg_spectrogram,

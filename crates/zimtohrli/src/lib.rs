@@ -1,6 +1,7 @@
 //! A verbatim port of Google's [Zimtohrli](https://github.com/google/zimtohrli)
 //! library from C++ to Rust.
 
+use fearless_simd::{Level, Simd, dispatch, f32x16, prelude::*};
 use libm::{cosf, exp, expf, logf, pow, powf, sinf};
 use multiversion_lite::multiversion;
 use std::{
@@ -101,8 +102,10 @@ impl Resonator {
 }
 
 /// Computes dot product of two 32-element float arrays.
+#[inline(always)]
 fn dot32(a: &[f32; 32], b: &[f32; 32]) -> f32 {
-    // TODO: ensure this is autovectorized well
+    // The four fixed accumulators expose lane parallelism without changing the
+    // final reduction order between SIMD levels.
     let mut sum = [0.0f32; 4];
     for i in (0..32).step_by(4) {
         sum[0] += a[i] * b[i];
@@ -148,6 +151,14 @@ fn calculate_bandwidth_in_hz(i: usize) -> f32 {
 /// Core signal processing engine using rotating phasors (Goertzel-like
 /// algorithm) for efficient frequency analysis. Implements the Zimtohrli/Tabuli
 /// filterbank.
+struct EnergyOutput<'a> {
+    values: &'a mut [f32],
+    step: usize,
+    stride: usize,
+    weight: f32,
+    has_next: bool,
+}
+
 struct Rotators {
     /// Four arrays of rotators, with memory layout for up to 128-way
     /// simd-parallel. [0..1] is real and imag for rotation speed [2..3] is real
@@ -173,35 +184,75 @@ impl Rotators {
         }
     }
 
-    /// Updates all rotators and accumulators with a new signal sample.
-    /// Applies windowing, rotates phasors, and accumulates energy.
+    /// Updates all rotators and accumulators with a new signal sample, then
+    /// adds their energy to the current output step (and optionally the next).
     #[inline(always)]
-    fn increment_all(&mut self, signal: f32) {
-        // TODO: figure out how to vectorize this
-        for i in 0..NUM_ROTATORS {
-            let w = self.window[i];
-            for k in 0..6 {
-                self.accu[k][i] *= w;
-            }
+    fn increment_all<S: Simd>(&mut self, simd: S, signal: f32, output: EnergyOutput<'_>) {
+        let EnergyOutput {
+            values: out,
+            step: out_ix,
+            stride: out_stride,
+            weight,
+            has_next: has_next_output,
+        } = output;
+        let signal = f32x16::splat(simd, signal);
+        let weight = f32x16::splat(simd, weight);
+        let next_weight = f32x16::splat(simd, 1.0) - weight;
+        for i in (0..NUM_ROTATORS).step_by(16) {
+            let range = i..i + 16;
+            let w = f32x16::from_slice(simd, &self.window[range.clone()]);
+            let mut acc0 = f32x16::from_slice(simd, &self.accu[0][range.clone()]) * w;
+            let mut acc1 = f32x16::from_slice(simd, &self.accu[1][range.clone()]) * w;
+            let mut acc2 = f32x16::from_slice(simd, &self.accu[2][range.clone()]) * w;
+            let mut acc3 = f32x16::from_slice(simd, &self.accu[3][range.clone()]) * w;
+            let mut acc4 = f32x16::from_slice(simd, &self.accu[4][range.clone()]) * w;
+            let mut acc5 = f32x16::from_slice(simd, &self.accu[5][range.clone()]) * w;
 
-            // TODO: the original code says "For an unknown reason this update
-            // order works best". It's unclear if this refers to performance or
-            // output.
-            self.accu[2][i] += self.accu[0][i];
-            self.accu[3][i] += self.accu[1][i];
-            self.accu[4][i] += self.accu[2][i];
-            self.accu[5][i] += self.accu[3][i];
-            let a = self.rot[2][i];
-            let b = self.rot[3][i];
-            self.accu[0][i] += a * signal;
-            self.accu[1][i] += b * signal;
-            self.rot[2][i] = (self.rot[0][i] * a) - (self.rot[1][i] * b);
-            self.rot[3][i] = (self.rot[0][i] * b) + (self.rot[1][i] * a);
+            // Preserve the original update order: later accumulators consume
+            // the already-updated value from the preceding stage.
+            acc2 += acc0;
+            acc3 += acc1;
+            acc4 += acc2;
+            acc5 += acc3;
+            let a = f32x16::from_slice(simd, &self.rot[2][range.clone()]);
+            let b = f32x16::from_slice(simd, &self.rot[3][range.clone()]);
+            acc0 += a * signal;
+            acc1 += b * signal;
+            let rot0 = f32x16::from_slice(simd, &self.rot[0][range.clone()]);
+            let rot1 = f32x16::from_slice(simd, &self.rot[1][range.clone()]);
+            let new_a = (rot0 * a) - (rot1 * b);
+            let new_b = (rot0 * b) + (rot1 * a);
+
+            acc0.store_slice(&mut self.accu[0][range.clone()]);
+            acc1.store_slice(&mut self.accu[1][range.clone()]);
+            acc2.store_slice(&mut self.accu[2][range.clone()]);
+            acc3.store_slice(&mut self.accu[3][range.clone()]);
+            acc4.store_slice(&mut self.accu[4][range.clone()]);
+            acc5.store_slice(&mut self.accu[5][range.clone()]);
+            new_a.store_slice(&mut self.rot[2][range.clone()]);
+            new_b.store_slice(&mut self.rot[3][range.clone()]);
+
+            // Consume acc4/acc5 while they are still in registers rather than
+            // loading them again in a second frequency-channel loop.
+            let energy = (acc4 * acc4) + (acc5 * acc5);
+            let current_start = out_ix * out_stride + i;
+            let current_range = current_start..current_start + 16;
+            let current = f32x16::from_slice(simd, &out[current_range.clone()]);
+            if has_next_output {
+                let next_start = current_start + out_stride;
+                let next_range = next_start..next_start + 16;
+                let next = f32x16::from_slice(simd, &out[next_range.clone()]);
+                (next + next_weight * energy).store_slice(&mut out[next_range]);
+                (current + weight * energy).store_slice(&mut out[current_range]);
+            } else {
+                (current + energy).store_slice(&mut out[current_range]);
+            }
         }
     }
 
     #[inline(always)]
-    fn filter_and_downsample_inner(
+    fn filter_and_downsample_inner<S: Simd>(
+        simd: S,
         input: &[f32],
         out: &mut [f32],
         out_shape0: usize,
@@ -331,23 +382,16 @@ impl Rotators {
             let in_slice: &[f32; KERNEL_SIZE] =
                 input[in_ix..in_ix + KERNEL_SIZE].try_into().unwrap();
             rotators.increment_all(
+                simd,
                 resonator.update(dot32(in_slice, &RESO_KERNEL)) + dot32(in_slice, &LINEAR_KERNEL),
+                EnergyOutput {
+                    values: out,
+                    step: out_ix,
+                    stride: out_stride,
+                    weight,
+                    has_next: out_ix + 1 < out_shape0,
+                },
             );
-
-            if out_ix + 1 < out_shape0 {
-                for k in 0..NUM_ROTATORS {
-                    let energy = (rotators.accu[4][k] * rotators.accu[4][k])
-                        + (rotators.accu[5][k] * rotators.accu[5][k]);
-                    out[(out_ix + 1) * out_stride + k] += (1.0 - weight) * energy;
-                    out[out_ix * out_stride + k] += weight * energy;
-                }
-            } else {
-                for k in 0..NUM_ROTATORS {
-                    let energy = (rotators.accu[4][k] * rotators.accu[4][k])
-                        + (rotators.accu[5][k] * rotators.accu[5][k]);
-                    out[out_ix * out_stride + k] += energy;
-                }
-            }
 
             dix += 1;
             if dix == downsample || in_ix + KERNEL_SIZE + 1 == input.len() {
@@ -380,10 +424,9 @@ impl Rotators {
         out_stride: usize,
         downsample: usize,
     ) {
-        multiversion(
-            #[inline(always)]
-            || Self::filter_and_downsample_inner(input, out, out_shape0, out_stride, downsample),
-        )
+        dispatch!(Level::new(), simd => {
+            Self::filter_and_downsample_inner(simd, input, out, out_shape0, out_stride, downsample)
+        })
     }
 }
 
@@ -1032,5 +1075,148 @@ impl Zimtohrli {
         let zero_crossing_reciprocal = 1.0 / sigmoid(0.0);
 
         1.0 + 4.0 * sigmoid(distance) * zero_crossing_reciprocal
+    }
+}
+
+#[cfg(test)]
+mod rotator_tests {
+    use super::*;
+
+    fn scalar_increment_all(
+        rotators: &mut Rotators,
+        signal: f32,
+        out: &mut [f32],
+        weight: f32,
+        has_next_output: bool,
+    ) {
+        for i in 0..NUM_ROTATORS {
+            let w = rotators.window[i];
+            for k in 0..6 {
+                rotators.accu[k][i] *= w;
+            }
+            rotators.accu[2][i] += rotators.accu[0][i];
+            rotators.accu[3][i] += rotators.accu[1][i];
+            rotators.accu[4][i] += rotators.accu[2][i];
+            rotators.accu[5][i] += rotators.accu[3][i];
+            let a = rotators.rot[2][i];
+            let b = rotators.rot[3][i];
+            rotators.accu[0][i] += a * signal;
+            rotators.accu[1][i] += b * signal;
+            rotators.rot[2][i] = (rotators.rot[0][i] * a) - (rotators.rot[1][i] * b);
+            rotators.rot[3][i] = (rotators.rot[0][i] * b) + (rotators.rot[1][i] * a);
+
+            let energy = (rotators.accu[4][i] * rotators.accu[4][i])
+                + (rotators.accu[5][i] * rotators.accu[5][i]);
+            if has_next_output {
+                out[NUM_ROTATORS + i] += (1.0 - weight) * energy;
+                out[i] += weight * energy;
+            } else {
+                out[i] += energy;
+            }
+        }
+    }
+
+    fn initial_rotators() -> Rotators {
+        Rotators {
+            rot: std::array::from_fn(|row| {
+                std::array::from_fn(|i| (1 + row * NUM_ROTATORS + i) as f32 * 0.000_031)
+            }),
+            accu: std::array::from_fn(|row| {
+                std::array::from_fn(|i| (1 + row * NUM_ROTATORS + i) as f32 * -0.000_017)
+            }),
+            window: std::array::from_fn(|i| 0.97 + i as f32 * 0.000_1),
+            gain: std::array::from_fn(|i| 1.0 + i as f32 * 0.01),
+        }
+    }
+
+    fn assert_increment_matches_scalar(level: Level) {
+        let signals = [0.25, -0.75, 0.001, 1.0, -0.125];
+        let mut expected = initial_rotators();
+        let mut expected_out = [0.0; 2 * NUM_ROTATORS];
+        for (i, signal) in signals.into_iter().enumerate() {
+            scalar_increment_all(&mut expected, signal, &mut expected_out, 0.25, i < 4);
+        }
+
+        let mut actual = initial_rotators();
+        let mut actual_out = [0.0; 2 * NUM_ROTATORS];
+        dispatch!(level, simd => {
+            for (i, signal) in signals.into_iter().enumerate() {
+                actual.increment_all(
+                    simd,
+                    signal,
+                    EnergyOutput {
+                        values: &mut actual_out,
+                        step: 0,
+                        stride: NUM_ROTATORS,
+                        weight: 0.25,
+                        has_next: i < 4,
+                    },
+                );
+            }
+        });
+
+        assert_eq!(
+            actual.rot.map(|row| row.map(f32::to_bits)),
+            expected.rot.map(|row| row.map(f32::to_bits))
+        );
+        assert_eq!(
+            actual.accu.map(|row| row.map(f32::to_bits)),
+            expected.accu.map(|row| row.map(f32::to_bits))
+        );
+        assert_eq!(actual_out.map(f32::to_bits), expected_out.map(f32::to_bits));
+    }
+
+    #[test]
+    fn simd_increment_is_bit_exact_with_scalar_evaluation_order() {
+        assert_increment_matches_scalar(Level::Fallback(fearless_simd::Fallback::new()));
+        let detected = Level::new();
+        assert_increment_matches_scalar(detected);
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if let Some(sse) = detected.as_sse4_2() {
+                assert_increment_matches_scalar(Level::Sse4_2(sse));
+            }
+            if let Some(avx2) = detected.as_avx2() {
+                assert_increment_matches_scalar(Level::Avx2(avx2));
+            }
+        }
+    }
+
+    fn filter_at_level(level: Level, input: &[f32]) -> Vec<u32> {
+        const STEPS: usize = 8;
+        let mut out = vec![0.0; STEPS * NUM_ROTATORS];
+        dispatch!(level, simd => {
+            Rotators::filter_and_downsample_inner(
+                simd,
+                input,
+                &mut out,
+                STEPS,
+                NUM_ROTATORS,
+                input.len() / STEPS,
+            );
+        });
+        out.into_iter().map(f32::to_bits).collect()
+    }
+
+    #[test]
+    fn complete_filter_is_bit_exact_across_available_simd_levels() {
+        let input = (0..4096)
+            .map(|i| ((i * 1049 + 17) % 2001) as f32 / 1000.0 - 1.0)
+            .collect::<Vec<_>>();
+        let fallback = Level::Fallback(fearless_simd::Fallback::new());
+        let expected = filter_at_level(fallback, &input);
+        let detected = Level::new();
+        assert_eq!(filter_at_level(detected, &input), expected);
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if let Some(sse) = detected.as_sse4_2() {
+                assert_eq!(filter_at_level(Level::Sse4_2(sse), &input), expected);
+            }
+            if let Some(avx2) = detected.as_avx2() {
+                assert_eq!(filter_at_level(Level::Avx2(avx2), &input), expected);
+            }
+        }
     }
 }

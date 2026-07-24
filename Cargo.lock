@@ -1141,6 +1141,8 @@ dependencies = [
 name = "zimtohrli"
 version = "0.1.0"
 dependencies = [
+ "criterion",
+ "fearless_simd",
  "libm",
  "multiversion-lite",
 ]

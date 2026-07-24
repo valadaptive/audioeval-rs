@@ -5,8 +5,16 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+fearless_simd.workspace = true
 libm.workspace = true
 multiversion-lite.workspace = true
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "pipeline"
+harness = false
 
 [lints]
 workspace = true

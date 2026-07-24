@@ -39,6 +39,12 @@ fn bench_pipeline(c: &mut Criterion) {
         visqol.disable_realignment = true;
         b.iter(|| visqol.run(&reference, &degraded).unwrap())
     });
+    group.bench_function("ravel48_opus128_no_alignment", |b| {
+        let mut visqol = Visqol::audio();
+        visqol.disable_global_alignment = true;
+        visqol.disable_realignment = true;
+        b.iter(|| visqol.run(&reference, &degraded).unwrap())
+    });
 
     group.finish();
 }

@@ -423,10 +423,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
-name = "multiversion-lite"
-version = "0.1.0"
-
-[[package]]
 name = "num-complex"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1144,7 +1140,6 @@ dependencies = [
  "criterion",
  "fearless_simd",
  "libm",
- "multiversion-lite",
 ]
 
 [[package]]

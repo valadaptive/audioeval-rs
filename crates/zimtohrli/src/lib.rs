@@ -3,7 +3,6 @@
 
 use fearless_simd::{Level, Simd, dispatch, f32x16, prelude::*};
 use libm::{cosf, exp, expf, logf, pow, powf, sinf};
-use multiversion_lite::multiversion;
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
@@ -418,13 +417,14 @@ impl Rotators {
     }
 
     fn filter_and_downsample(
+        level: Level,
         input: &[f32],
         out: &mut [f32],
         out_shape0: usize,
         out_stride: usize,
         downsample: usize,
     ) {
-        dispatch!(Level::new(), simd => {
+        dispatch!(level, simd => {
             Self::filter_and_downsample_inner(simd, input, out, out_shape0, out_stride, downsample)
         })
     }
@@ -822,6 +822,7 @@ impl CostMatrix {
 /// Computes the perceptual distance between two spectrogram frames.
 /// Uses p norm with psychoacoustic weighting.
 /// Used by DTW to compute frame-to-frame alignment costs.
+#[inline(always)]
 fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) -> f64 {
     let dims_a = &a[step_a];
     let dims_b = &b[step_b];
@@ -848,7 +849,7 @@ fn delta_norm(a: &Spectrogram, b: &Spectrogram, step_a: usize, step_b: usize) ->
     }
 
     result +=
-        ((sums[0] + sums[1]) + (sums[2] + sums[3])) + (sums[4] + sums[5]) + (sums[6] + sums[7]);
+        ((sums[0] + sums[1]) + (sums[2] + sums[3])) + ((sums[4] + sums[5]) + (sums[6] + sums[7]));
 
     // The exponent PP = 0.32264042946823823 is baked into pow_pp (see
     // fast_pow.rs). Bafflingly, the C++ version defines it as a `const
@@ -917,11 +918,13 @@ fn dtw_inner(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usi
 // the corner-to-corner diagonal is explored (see [CostMatrix]). The result is
 // identical to the full DTW whenever the optimal warp path stays inside the
 // band; misalignments larger than the band cannot be recovered.
-fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -> Warped {
-    multiversion(
-        #[inline(always)]
-        || dtw_inner(spec_a, spec_b, band_radius),
-    )
+fn dtw(
+    level: Level,
+    spec_a: &Spectrogram,
+    spec_b: &Spectrogram,
+    band_radius: Option<usize>,
+) -> Warped {
+    dispatch!(level, _ => dtw_inner(spec_a, spec_b, band_radius))
 }
 
 /// Main class for psychoacoustic audio analysis.
@@ -929,6 +932,8 @@ fn dtw(spec_a: &Spectrogram, spec_b: &Spectrogram, band_radius: Option<usize>) -
 /// perceptual distance between audio signals using the Zimtohrli metric.
 /// Expected input: 48kHz mono audio with samples in range [-1, 1].
 pub struct Zimtohrli {
+    /// SIMD feature level.
+    pub level: Level,
     /// The window in perceptual_sample_rate time steps when compting the NSIM.
     pub nsim_step_window: usize,
     /// The window in channels when computing the NSIM.
@@ -955,6 +960,7 @@ impl Default for Zimtohrli {
         let samples_per_perceptual_block = (SAMPLE_RATE / high_gamma_band) as usize;
         let perceptual_sample_rate = SAMPLE_RATE / samples_per_perceptual_block as f32;
         Self {
+            level: Level::new(),
             nsim_step_window: 8,
             nsim_channel_window: 5,
             perceptual_sample_rate,
@@ -971,6 +977,7 @@ impl Zimtohrli {
     pub fn analyze_into(&self, signal: &[f32], spectrogram: &mut Spectrogram) {
         assert_eq!(spectrogram.num_dims, NUM_ROTATORS);
         Rotators::filter_and_downsample(
+            self.level,
             signal,
             &mut spectrogram.values,
             spectrogram.num_steps,
@@ -1030,7 +1037,7 @@ impl Zimtohrli {
         }
 
         Self::rescale_to_match_energy(spec_a, spec_b);
-        let time_pairs = dtw(spec_a, spec_b, self.dtw_band_radius);
+        let time_pairs = dtw(self.level, spec_a, spec_b, self.dtw_band_radius);
         1.0 - nsim(
             spec_a,
             spec_b,

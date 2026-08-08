@@ -2,16 +2,19 @@
 resolver = "2"
 members = [
     "crates/audio-io",
+    "crates/benchmarks",
     "crates/visqol",
     "crates/visqol-compare",
     "crates/zimtohrli",
     "crates/zimtohrli-compare",
+    "crates/zimtohrli-cpp",
 ]
 
 [workspace.dependencies]
 audio-io = { path = "crates/audio-io" }
 visqol = { path = "crates/visqol" }
 zimtohrli = { path = "crates/zimtohrli" }
+zimtohrli-cpp = { path = "crates/zimtohrli-cpp" }
 
 anyhow = "1.0.103"
 clap = "4.6.1"

@@ -1,0 +1,16 @@
+[package]
+name = "zimtohrli-cpp"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "FFI bindings to the original C++ Zimtohrli implementation, for benchmarking and parity-checking the Rust zimtohrli crate"
+links = "zimtohrli_cpp"
+
+[build-dependencies]
+cc = "1.2.19"
+
+[dev-dependencies]
+zimtohrli.workspace = true
+
+[lints]
+workspace = true

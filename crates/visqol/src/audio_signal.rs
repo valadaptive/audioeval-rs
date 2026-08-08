@@ -1,5 +1,6 @@
 //! Mono audio signal input type.
 
+/// A mono audio signal with a given sample rate.
 #[derive(Clone, Debug)]
 pub struct AudioSignal {
     /// Mono samples, nominally in [-1, 1].
@@ -15,21 +16,29 @@ impl AudioSignal {
         }
     }
 
-    /// Downmix planar channels to mono by averaging, like the C++
-    /// `MiscAudio::ToMono`.
-    pub fn from_channels<S: AsRef<[f32]>>(channels: &[S], sample_rate: u32) -> Self {
-        let num_channels = channels.len();
-        assert!(num_channels > 0, "need at least one channel");
-        let len = channels.iter().map(|c| c.as_ref().len()).min().unwrap();
-        let mut samples = vec![0.0f64; len];
+    /// Downmix planar channels to mono by averaging.
+    pub fn from_channels<S: AsRef<[f32]>>(
+        channels: impl IntoIterator<Item = S>,
+        sample_rate: u32,
+    ) -> Self {
+        let mut channels = channels.into_iter();
+        let first_channel = channels.next().expect("need at least one channel");
+        let first_channel = first_channel.as_ref();
+        let mut samples: Vec<f64> = first_channel.iter().map(|&s| s as f64).collect();
+        let mut num_channels = 1;
         for channel in channels {
             for (acc, &s) in samples.iter_mut().zip(channel.as_ref()) {
                 *acc += s as f64;
             }
+            num_channels += 1;
         }
-        for s in &mut samples {
-            *s /= num_channels as f64;
+        if num_channels > 1 {
+            let recip = 1.0 / (num_channels as f64);
+            for s in &mut samples {
+                *s *= recip;
+            }
         }
+
         AudioSignal::new(samples, sample_rate)
     }
 

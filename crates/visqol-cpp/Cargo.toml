@@ -1,0 +1,15 @@
+[package]
+name = "visqol-cpp"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "FFI bindings to the original C++ ViSQOL implementation, for benchmarking and parity-checking the Rust visqol crate"
+publish = false
+links = "visqol_capi"
+
+[dev-dependencies]
+audio-io.workspace = true
+visqol.workspace = true
+
+[lints]
+workspace = true

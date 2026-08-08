@@ -141,6 +141,8 @@ version = "0.1.0"
 dependencies = [
  "audio-io",
  "criterion",
+ "visqol",
+ "visqol-cpp",
  "zimtohrli",
  "zimtohrli-cpp",
 ]
@@ -1000,6 +1002,14 @@ dependencies = [
  "anyhow",
  "audio-io",
  "clap",
+ "visqol",
+]
+
+[[package]]
+name = "visqol-cpp"
+version = "0.1.0"
+dependencies = [
+ "audio-io",
  "visqol",
 ]
 

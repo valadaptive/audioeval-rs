@@ -6,9 +6,16 @@ license = "Apache-2.0"
 description = "Head-to-head benchmarks of the Rust metric implementations against the C++ originals"
 publish = false
 
+# visqol-cpp is a normal (not dev-) dependency so that its build script's
+# lib_dir metadata reaches this crate's build script (see build.rs); links
+# metadata does not propagate through dev- or build-dependencies.
+[dependencies]
+visqol-cpp.workspace = true
+
 [dev-dependencies]
 audio-io.workspace = true
 criterion = "0.8.2"
+visqol.workspace = true
 zimtohrli.workspace = true
 zimtohrli-cpp.workspace = true
 
@@ -17,6 +24,10 @@ zimtohrli-cpp.workspace = true
 [lib]
 test = false
 bench = false
+
+[[bench]]
+name = "visqol"
+harness = false
 
 [[bench]]
 name = "zimtohrli"

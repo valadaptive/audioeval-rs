@@ -5,6 +5,7 @@ members = [
     "crates/benchmarks",
     "crates/visqol",
     "crates/visqol-compare",
+    "crates/visqol-cpp",
     "crates/zimtohrli",
     "crates/zimtohrli-compare",
     "crates/zimtohrli-cpp",
@@ -13,6 +14,7 @@ members = [
 [workspace.dependencies]
 audio-io = { path = "crates/audio-io" }
 visqol = { path = "crates/visqol" }
+visqol-cpp = { path = "crates/visqol-cpp" }
 zimtohrli = { path = "crates/zimtohrli" }
 zimtohrli-cpp = { path = "crates/zimtohrli-cpp" }
 

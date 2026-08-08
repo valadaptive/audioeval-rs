@@ -1,4 +1,4 @@
-//! A pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3.3, an objective, full-reference metric for perceived audio quality.
+//! A fast, pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3.3, an objective, full-reference metric for perceived audio quality.
 //!
 //! ```ignore
 //! use visqol::{AudioSignal, Visqol};
@@ -36,6 +36,12 @@
 //! The audio and non-lattice speech models match the original C++ implementation to ~13 significant digits. The lattice speech model's scores match to ~6 significant digits. This is well within the [upstream conformance tolerance of 1e-4](https://github.com/google/visqol/blob/38d0b01/python/visqol_lib_py_test.py#L20).
 //!
 //! Results will likely not be *bit-identical* across machines due to potential rounding differences in libm functions, runtime FFT kernel decisions, and other factors outside this library's control. They are, however, expected to land well within the conformance tests' tolerance.
+//!
+//! ## Performance
+//!
+//! This crate is significantly faster than the original C++ implementation of ViSQOL: around **40x faster** in audio mode, and **30-35x faster** in speech mode.
+//!
+//! I am aware that the performance improvement seems unusually large, and if anybody . The original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
 
 mod alignment;
 mod analysis_window;

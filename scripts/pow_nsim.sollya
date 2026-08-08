@@ -1,0 +1,53 @@
+// Generates the data for pow_p0/pow_p1 in src/pow_nsim_table.rs:
+//
+//   sollya pow_nsim.sollya | python3 pow_nsim_to_rs.py > ../crates/zimtohrli/src/pow_nsim_table.rs
+//
+// pow_p0/pow_p1 compute x^P for the fixed NSIM aggregation exponents
+// P0 = 1.0500187278772866 (intensity) and P1 = 0.25808223975919764
+// (structure), in f32, using the same split as pow_pp:
+//
+//   x^P = 2^(P*k) * m^P,  x = 2^k * m with m in [sqrt(0.5), sqrt(2))
+//
+// where 2^(P*k) is a correctly rounded f32 table over all k reachable from a
+// positive normal f32 (k in -126..=128), and m^P is a single minimax
+// polynomial in t = m - 1 with f32 coefficients. See pow_pp.sollya for why
+// the constant exponent buys the table.
+//
+// Degree choice (fpminimax relative error with f32 coefficients, measured
+// with this script: deg N -> 2^-e):
+//   P0: deg 5 -> 2^-24, deg 6 -> 2^-27, floor at 2^-29
+//   P1: deg 6 -> 2^-23, deg 7 -> 2^-26, deg 8 -> 2^-28
+// f32 ulp is 2^-24; degrees 6 and 8 sit comfortably below it, leaving room
+// for the evaluation rounding error.
+//
+// The t^0 coefficient is constrained to exactly 1 (trailing fpminimax arg)
+// so that pow_p*(1.0) == 1.0.
+
+prec = 512!;
+
+P0 = D(1.0500187278772866);
+P1 = D(0.25808223975919764);
+write("EXP P0 "); print(P0);
+write("EXP P1 "); print(P1);
+
+pad = 2^(-20); // covers the rounding of the reduction cut at sqrt(0.5) in f32
+dom = [sqrt(0.5) - 1 - pad; sqrt(2) - 1 + pad];
+
+procedure gen(name, P, deg) {
+  f = (1+x)^P;
+  p = fpminimax(f, [|1,...,deg|], [|SG...|], dom, relative, floating, 1);
+  write("RELERR ", name, " 2^(", ceil(log2(dirtyinfnorm(p/f - 1, dom))), ")\n");
+  for j from 1 to deg do {
+    write("COEF ", name, " ");
+    printsingle(coeff(p, j));
+    write("\n");
+  };
+  for k from -126 to 128 do {
+    write("TBL ", name, " ");
+    printsingle(2^(P*k));
+    write("\n");
+  };
+};
+
+gen("P0", P0, 6);
+gen("P1", P1, 8);

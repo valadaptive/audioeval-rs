@@ -2,15 +2,16 @@
 //! library from C++ to Rust.
 
 use fearless_simd::{Level, Simd, dispatch, f32x16, prelude::*};
-use libm::{cosf, exp, expf, logf, pow, powf, sinf};
+use libm::{cosf, exp, expf, logf, pow, sinf};
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
 };
 
 mod fast_pow;
+mod pow_nsim_table;
 mod pow_pp_table;
-use fast_pow::pow_pp;
+use fast_pow::{pow_p0, pow_p1, pow_pp};
 
 const SAMPLE_RATE: f32 = 48000.0;
 
@@ -685,6 +686,7 @@ fn nsim<A: Alignment>(
         num_channels,
         step_window,
         channel_window,
+        #[inline(always)]
         |step_index, channel_index| {
             let delta_a = a[alignment.step_a(step_index)][channel_index]
                 - mean_a[alignment.step_a(step_index)][channel_index];
@@ -704,8 +706,9 @@ fn nsim<A: Alignment>(
     const C1: f32 = 26.426389124321354;
     const C3: f32 = 1.9522719384622791;
     const C8: f32 = 0.6325126087671703;
-    const P0: f32 = 1.0500187278772866;
-    const P1: f32 = 0.25808223975919764;
+    // The intensity exponent P0 = 1.0500187278772866 and structure exponent
+    // P1 = 0.25808223975919764 are baked into the fixed-exponent kernels
+    // [pow_p0]/[pow_p1].
 
     let mut nsim_sum = 0.0f64;
     for step_index in 0..num_steps {
@@ -716,14 +719,13 @@ fn nsim<A: Alignment>(
             let std_a_vec = var_a[step_index][channel_index].sqrt();
             let std_b_vec = var_b[step_index][channel_index].sqrt();
             let cov_vec = cov[step_index][channel_index];
-            let intensity = powf(
+            let intensity = pow_p0(
                 (2.0 * (mean_a_vec * mean_b_vec).sqrt() + C1)
                     / (mean_a_vec.abs() + mean_b_vec.abs() + C1),
-                P0,
             );
             let structure_base = (cov_vec + C3) / (std_a_vec * std_b_vec + C3);
             let structure_clamped = structure_base.max(C8);
-            let structure = powf(structure_clamped, P1);
+            let structure = pow_p1(structure_clamped);
             let nsim = intensity * structure;
             nsim_accu += nsim as f64;
         }

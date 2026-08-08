@@ -100,6 +100,44 @@ fn bench_zimtohrli(c: &mut Criterion) {
         )
     });
 
+    group.bench_function("e2e/rust", |b| {
+        b.iter(
+            || {
+                let mut spec_a = rust.analyze(&signal_a);
+                let mut spec_b = rust.analyze(&signal_b);
+                rust.distance(&mut spec_a, &mut spec_b)
+            },
+        )
+    });
+    group.bench_function("e2e/cpp", |b| {
+        b.iter(
+            || {
+                let mut spec_a = cpp.analyze(&signal_a);
+                let mut spec_b = cpp.analyze(&signal_b);
+                cpp.distance(&mut spec_a, &mut spec_b)
+            },
+        )
+    });
+
+    group.bench_function("e2e_without_dtw/rust", |b| {
+        b.iter(
+            || {
+                let mut spec_a = rust.analyze(&signal_a);
+                let mut spec_b = rust.analyze(&signal_b);
+                rust.distance_without_dtw(&mut spec_a, &mut spec_b)
+            },
+        )
+    });
+    group.bench_function("e2e_without_dtw/cpp", |b| {
+        b.iter(
+            || {
+                let mut spec_a = cpp.analyze(&signal_a);
+                let mut spec_b = cpp.analyze(&signal_b);
+                cpp.distance_without_dtw(&mut spec_a, &mut spec_b)
+            },
+        )
+    });
+
     group.finish();
 }
 

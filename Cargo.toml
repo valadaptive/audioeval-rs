@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/audio-io",
     "crates/benchmarks",
+    "crates/two-f-model",
     "crates/visqol",
     "crates/visqol-compare",
     "crates/visqol-cpp",
@@ -13,6 +14,7 @@ members = [
 
 [workspace.dependencies]
 audio-io = { path = "crates/audio-io" }
+two-f-model = { path = "crates/two-f-model" }
 visqol = { path = "crates/visqol" }
 visqol-cpp = { path = "crates/visqol-cpp" }
 zimtohrli = { path = "crates/zimtohrli" }
@@ -32,9 +34,11 @@ fearless_simd = "0.6.0"
 [profile.release]
 debug = "full"
 
-# The visqol conformance tests process tens of seconds of audio; keep the DSP
-# optimized even in dev/test builds.
+# The metric conformance tests process substantial amounts of audio; keep the
+# DSP optimized even in dev/test builds.
 [profile.dev.package.visqol]
+opt-level = 2
+[profile.dev.package.two-f-model]
 opt-level = 2
 [profile.dev.package.realfft]
 opt-level = 2

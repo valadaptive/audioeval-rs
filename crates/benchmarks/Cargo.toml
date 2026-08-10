@@ -6,13 +6,20 @@ license = "Apache-2.0"
 description = "Head-to-head benchmarks of the Rust metric implementations against the C++ originals"
 publish = false
 
-[dev-dependencies]
+[dependencies]
+visqol-cpp = { workspace = true, optional = true }
+zimtohrli-cpp = { workspace = true, optional = true }
 audio-io.workspace = true
+
+[dev-dependencies]
 criterion = "0.8.2"
 visqol.workspace = true
-visqol-cpp.workspace = true
 zimtohrli.workspace = true
-zimtohrli-cpp.workspace = true
+
+[features]
+default = []
+visqol-cpp = ["dep:visqol-cpp"]
+zimtohrli-cpp = ["dep:zimtohrli-cpp"]
 
 # Bench-only crate: keep libtest out of the way so that criterion CLI flags
 # can be passed with a plain `cargo bench -p benchmarks -- <flags>`.

@@ -13,9 +13,5 @@ fearless_simd.workspace = true
 audio-io.workspace = true
 criterion = "0.8.2"
 
-[[bench]]
-name = "pipeline"
-harness = false
-
 [lints]
 workspace = true

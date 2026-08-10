@@ -11,9 +11,5 @@ libm.workspace = true
 [dev-dependencies]
 criterion = "0.8.2"
 
-[[bench]]
-name = "pipeline"
-harness = false
-
 [lints]
 workspace = true

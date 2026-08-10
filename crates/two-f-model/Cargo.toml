@@ -6,6 +6,7 @@ license = "Apache-2.0"
 description = "Pure-Rust implementation of the SEBASS 2f-model audio quality metric"
 
 [dependencies]
+fearless_simd.workspace = true
 num-complex.workspace = true
 realfft.workspace = true
 

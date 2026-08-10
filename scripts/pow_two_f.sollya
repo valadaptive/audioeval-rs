@@ -1,0 +1,53 @@
+// Generates the coefficients and exponent scale tables for two-f-model's
+// fixed rational powers:
+//
+//   sollya pow_two_f.sollya | python3 pow_two_f_to_rs.py > ../crates/two-f-model/src/pow_table.rs
+//
+// Each kernel reduces x to x = 2^k * m, with m in
+// [sqrt(0.5), sqrt(2)), and computes
+//
+//   x^p = 2^(p*k) * m^p.
+//
+// The scale table deliberately uses the exact binary64 value of p rather than
+// treating the source decimal as a rational number. That distinction matters
+// at the extremes of the binary64 exponent range. The degree-17 minimax
+// polynomial has about one ulp of relative approximation error.
+
+prec = 512!;
+pad = 2^(-40); // covers rounding of the range-reduction cut
+interval = [sqrt(0.5) - 1 - pad; sqrt(2) - 1 + pad];
+deg = 17;
+
+P = D(0.05);
+f = (1+x)^P;
+p = fpminimax(f, [|1,...,deg|], [|D...|], interval, relative, floating, 1);
+write("POWER P005 1 20 17\n");
+write("RELERR 2^(", ceil(log2(dirtyinfnorm(p/f - 1, interval))), ")\n");
+for j from 1 to deg do { write("COEF "); printdouble(coeff(p, j)); };
+for k from -1022 to 1024 do { write("SCALE "); printdouble(round(2^(P*k), D, RN)); };
+
+P = D(0.4);
+f = (1+x)^P;
+p = fpminimax(f, [|1,...,deg|], [|D...|], interval, relative, floating, 1);
+write("POWER P04 2 5 17\n");
+write("RELERR 2^(", ceil(log2(dirtyinfnorm(p/f - 1, interval))), ")\n");
+for j from 1 to deg do { write("COEF "); printdouble(coeff(p, j)); };
+for k from -1022 to 1024 do { write("SCALE "); printdouble(round(2^(P*k), D, RN)); };
+
+P = D(0.3);
+f = (1+x)^P;
+p = fpminimax(f, [|1,...,deg|], [|D...|], interval, relative, floating, 1);
+write("POWER P03 3 10 17\n");
+write("RELERR 2^(", ceil(log2(dirtyinfnorm(p/f - 1, interval))), ")\n");
+for j from 1 to deg do { write("COEF "); printdouble(coeff(p, j)); };
+for k from -1022 to 1024 do { write("SCALE "); printdouble(round(2^(P*k), D, RN)); };
+
+P = D(1.71332);
+f = (1+x)^P;
+p = fpminimax(f, [|1,...,deg|], [|D...|], interval, relative, floating, 1);
+write("POWER P171332 42833 25000 17\n");
+write("RELERR 2^(", ceil(log2(dirtyinfnorm(p/f - 1, interval))), ")\n");
+for j from 1 to deg do { write("COEF "); printdouble(coeff(p, j)); };
+// p > 1 makes the full-range scales overflow. pow_171332 splits k into
+// two halves, each of which is covered by this entirely-normal table.
+for k from -511 to 512 do { write("SCALE "); printdouble(round(2^(P*k), D, RN)); };

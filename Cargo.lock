@@ -141,6 +141,7 @@ version = "0.1.0"
 dependencies = [
  "audio-io",
  "criterion",
+ "two-f-model",
  "visqol",
  "visqol-cpp",
  "zimtohrli",
@@ -966,6 +967,7 @@ name = "two-f-model"
 version = "0.1.0"
 dependencies = [
  "audio-io",
+ "fearless_simd",
  "num-complex",
  "realfft",
 ]
@@ -998,7 +1000,6 @@ name = "visqol"
 version = "0.1.0"
 dependencies = [
  "audio-io",
- "criterion",
  "fearless_simd",
  "num-complex",
  "realfft",
@@ -1166,7 +1167,6 @@ dependencies = [
 name = "zimtohrli"
 version = "0.1.0"
 dependencies = [
- "criterion",
  "fearless_simd",
  "libm",
 ]

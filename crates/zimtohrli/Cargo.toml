@@ -8,8 +8,5 @@ license = "Apache-2.0"
 fearless_simd.workspace = true
 libm.workspace = true
 
-[dev-dependencies]
-criterion = "0.8.2"
-
 [lints]
 workspace = true

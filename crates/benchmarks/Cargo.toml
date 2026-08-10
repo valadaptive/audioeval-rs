@@ -12,7 +12,8 @@ zimtohrli-cpp = { workspace = true, optional = true }
 audio-io.workspace = true
 
 [dev-dependencies]
-criterion = "0.8.2"
+criterion.workspace = true
+two-f-model.workspace = true
 visqol.workspace = true
 zimtohrli.workspace = true
 
@@ -26,6 +27,10 @@ zimtohrli-cpp = ["dep:zimtohrli-cpp"]
 [lib]
 test = false
 bench = false
+
+[[bench]]
+name = "two-f-model"
+harness = false
 
 [[bench]]
 name = "visqol"

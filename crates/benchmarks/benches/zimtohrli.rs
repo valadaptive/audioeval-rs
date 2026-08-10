@@ -28,8 +28,8 @@ fn clone_spec(spec: &Spectrogram) -> Spectrogram {
 }
 
 fn bench_zimtohrli(c: &mut Criterion) {
-    let signal_a = &load_corpus_sample("ravel48_stereo.wav", 48000, Some(5)).channels[0];
-    let signal_b =
+    let reference = &load_corpus_sample("ravel48_stereo.wav", 48000, Some(5)).channels[0];
+    let degraded =
         &load_corpus_sample("ravel48_stereo_128kbps_opus.wav", 48000, Some(5)).channels[0];
 
     let rust = Zimtohrli::default();
@@ -40,37 +40,37 @@ fn bench_zimtohrli(c: &mut Criterion) {
         .measurement_time(Duration::from_secs(20));
 
     group.bench_function("analyze/rust", |b| {
-        b.iter(|| rust.analyze(black_box(&signal_a)))
+        b.iter(|| rust.analyze(black_box(&reference)))
     });
 
-    let rust_spec_a = rust.analyze(&signal_a);
-    let rust_spec_b = rust.analyze(&signal_b);
+    let rust_spec_ref = rust.analyze(&reference);
+    let rust_spec_deg = rust.analyze(&degraded);
 
     group.bench_function("distance_without_dtw/rust", |b| {
         b.iter_batched(
-            || (clone_spec(&rust_spec_a), clone_spec(&rust_spec_b)),
+            || (clone_spec(&rust_spec_ref), clone_spec(&rust_spec_deg)),
             |(mut spec_a, mut spec_b)| rust.distance_without_dtw(&mut spec_a, &mut spec_b),
             BatchSize::SmallInput,
         )
     });
     group.bench_function("distance/rust", |b| {
         b.iter_batched(
-            || (clone_spec(&rust_spec_a), clone_spec(&rust_spec_b)),
+            || (clone_spec(&rust_spec_ref), clone_spec(&rust_spec_deg)),
             |(mut spec_a, mut spec_b)| rust.distance(&mut spec_a, &mut spec_b),
             BatchSize::SmallInput,
         )
     });
     group.bench_function("e2e/rust", |b| {
         b.iter(|| {
-            let mut spec_a = rust.analyze(&signal_a);
-            let mut spec_b = rust.analyze(&signal_b);
+            let mut spec_a = rust.analyze(&reference);
+            let mut spec_b = rust.analyze(&degraded);
             rust.distance(&mut spec_a, &mut spec_b)
         })
     });
     group.bench_function("e2e_without_dtw/rust", |b| {
         b.iter(|| {
-            let mut spec_a = rust.analyze(&signal_a);
-            let mut spec_b = rust.analyze(&signal_b);
+            let mut spec_a = rust.analyze(&reference);
+            let mut spec_b = rust.analyze(&degraded);
             rust.distance_without_dtw(&mut spec_a, &mut spec_b)
         })
     });
@@ -78,36 +78,36 @@ fn bench_zimtohrli(c: &mut Criterion) {
     #[cfg(feature = "zimtohrli-cpp")]
     {
         let cpp = zimtohrli_cpp::CppZimtohrli::default();
-        let cpp_spec_a = cpp.analyze(&signal_a);
-        let cpp_spec_b = cpp.analyze(&signal_b);
+        let cpp_spec_ref = cpp.analyze(&reference);
+        let cpp_spec_deg = cpp.analyze(&degraded);
         group.bench_function("analyze/cpp", |b| {
-            b.iter(|| cpp.analyze(black_box(&signal_a)))
+            b.iter(|| cpp.analyze(black_box(&reference)))
         });
         group.bench_function("distance_without_dtw/cpp", |b| {
             b.iter_batched(
-                || (cpp_spec_a.clone(), cpp_spec_b.clone()),
+                || (cpp_spec_ref.clone(), cpp_spec_deg.clone()),
                 |(mut spec_a, mut spec_b)| cpp.distance_without_dtw(&mut spec_a, &mut spec_b),
                 BatchSize::SmallInput,
             )
         });
         group.bench_function("distance/cpp", |b| {
             b.iter_batched(
-                || (cpp_spec_a.clone(), cpp_spec_b.clone()),
+                || (cpp_spec_ref.clone(), cpp_spec_deg.clone()),
                 |(mut spec_a, mut spec_b)| cpp.distance(&mut spec_a, &mut spec_b),
                 BatchSize::SmallInput,
             )
         });
         group.bench_function("e2e/cpp", |b| {
             b.iter(|| {
-                let mut spec_a = cpp.analyze(&signal_a);
-                let mut spec_b = cpp.analyze(&signal_b);
+                let mut spec_a = cpp.analyze(&reference);
+                let mut spec_b = cpp.analyze(&degraded);
                 cpp.distance(&mut spec_a, &mut spec_b)
             })
         });
         group.bench_function("e2e_without_dtw/cpp", |b| {
             b.iter(|| {
-                let mut spec_a = cpp.analyze(&signal_a);
-                let mut spec_b = cpp.analyze(&signal_b);
+                let mut spec_a = cpp.analyze(&reference);
+                let mut spec_b = cpp.analyze(&degraded);
                 cpp.distance_without_dtw(&mut spec_a, &mut spec_b)
             })
         });

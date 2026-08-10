@@ -22,6 +22,7 @@ zimtohrli-cpp = { path = "crates/zimtohrli-cpp" }
 
 anyhow = "1.0.103"
 clap = "4.6.1"
+criterion = "0.8.2"
 symphonia = "0.6"
 rubato = "3.0.0"
 audioadapter = "3.0.0"

@@ -8,7 +8,7 @@
 //! let reference: Vec<Vec<f32>> = vec![vec![0.0; 48_000]; 2];
 //! let degraded = reference.clone();
 //! let mut model = TwoFModel::new();
-//! let result = model.run(&reference, &degraded, 48_000)?;
+//! let result = model.run(&reference, &degraded)?;
 //! println!("estimated MUSHRA score: {}", result.mushra_score);
 //! # Ok::<(), two_f_model::Error>(())
 //! ```
@@ -18,10 +18,14 @@
 //! The returned score is clipped to the MUSHRA range of 0–100; the unclipped regression output and both MOVs are also available in `TwoFResult`.
 
 mod constants;
+mod fast_pow;
+mod pow_table;
 
 use std::sync::Arc;
 
 use constants::{FC, FL, FU, NUM_BANDS};
+use fast_pow::{pow_03, pow_04, pow_005, pow_171332};
+use fearless_simd::{Level, dispatch, prelude::*};
 use num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
 
@@ -112,11 +116,35 @@ struct FrameMov {
     weight: f64,
 }
 
+struct Spreading {
+    lower_powered: f64,
+    lower_sum: [f64; NUM_BANDS],
+    upper_slope: [f64; NUM_BANDS],
+}
+
+impl Spreading {
+    fn new() -> Self {
+        const EXPONENT: f64 = 0.4;
+        const BAND_WIDTH: f64 = 0.25;
+        let lower_slope = 10.0f64.powf(-2.7 * BAND_WIDTH);
+        Self {
+            lower_powered: lower_slope.powf(EXPONENT),
+            lower_sum: std::array::from_fn(|band| {
+                (1.0 - lower_slope.powi((band + 1) as i32)) / (1.0 - lower_slope)
+            }),
+            upper_slope: std::array::from_fn(|band| {
+                10.0f64.powf((-2.4 - 23.0 / FC[band]) * BAND_WIDTH)
+            }),
+        }
+    }
+}
+
 /// Reusable 2f-model evaluator.
 ///
 /// Construction precomputes the PEAQ filter-bank tables and FFT plan. The
 /// per-signal filter memories are reset by every call to [`run`](Self::run).
 pub struct TwoFModel {
+    simd_level: Level,
     fft: Arc<dyn RealToComplex<f64>>,
     fft_input: Vec<f64>,
     fft_output: Vec<Complex<f64>>,
@@ -125,6 +153,7 @@ pub struct TwoFModel {
     outer_middle_ear: [f64; SPECTRUM_SIZE],
     mappings: [BandMapping; NUM_BANDS],
     internal_noise: [f64; NUM_BANDS],
+    spreading: Spreading,
     spread_normalization: [f64; NUM_BANDS],
     time_a: [f64; NUM_BANDS],
     time_b: [f64; NUM_BANDS],
@@ -143,6 +172,7 @@ impl TwoFModel {
     pub fn new() -> Self {
         let mut planner = RealFftPlanner::<f64>::new();
         let fft = planner.plan_fft_forward(FRAME_SIZE);
+        let simd_level = Level::new();
 
         let mut window = [0.0; FRAME_SIZE];
         let normalized_frequency = 1019.5 / SAMPLE_RATE as f64;
@@ -200,12 +230,15 @@ impl TwoFModel {
 
         let internal_noise =
             std::array::from_fn(|i| 10.0f64.powf(1.456 * (FC[i] / 1000.0).powf(-0.8) / 10.0));
-        let spread_normalization = spread_raw(&[1.0; NUM_BANDS]);
+        let spreading = Spreading::new();
+        let spread_normalization =
+            dispatch!(simd_level, simd => spread_raw(simd, &[1.0; NUM_BANDS], &spreading));
         let (time_a, time_b) = time_constants(0.030, 0.008);
         let (modulation_a, modulation_b) = time_constants(0.050, 0.008);
         let noise_powered = internal_noise.map(|energy| energy.powf(0.3));
 
         Self {
+            simd_level,
             fft_input: fft.make_input_vec(),
             fft_output: fft.make_output_vec(),
             fft_scratch: fft.make_scratch_vec(),
@@ -214,6 +247,7 @@ impl TwoFModel {
             outer_middle_ear,
             mappings,
             internal_noise,
+            spreading,
             spread_normalization,
             time_a,
             time_b,
@@ -353,7 +387,7 @@ impl TwoFModel {
         let mut modulation = [[0.0; NUM_BANDS]; 2];
         for signal in 0..2 {
             for band in 0..NUM_BANDS {
-                let powered = excitation[signal][band].powf(0.3);
+                let powered = pow_03(excitation[signal][band]);
                 state.derivative[signal][band] = self.modulation_a[band]
                     * state.derivative[signal][band]
                     + self.modulation_b[band]
@@ -418,7 +452,8 @@ impl TwoFModel {
             energy += mapping.upper_weight * weighted[mapping.upper_bin];
             energy.max(1e-12) + self.internal_noise[band]
         });
-        let spread = spread_raw(&grouped);
+        let spread =
+            dispatch!(self.simd_level, simd => spread_raw(simd, &grouped, &self.spreading));
         std::array::from_fn(|i| spread[i] / self.spread_normalization[i])
     }
 }
@@ -455,37 +490,72 @@ fn time_constants(time_at_100_hz: f64, minimum_time: f64) -> ([f64; NUM_BANDS], 
     (a, a.map(|value| 1.0 - value))
 }
 
-fn spread_raw(energy: &[f64; NUM_BANDS]) -> [f64; NUM_BANDS] {
-    const EXPONENT: f64 = 0.4;
-    const BAND_WIDTH: f64 = 0.25;
-    let lower_slope = 10.0f64.powf(-2.7 * BAND_WIDTH);
-    let lower_powered = lower_slope.powf(EXPONENT);
+#[inline(always)]
+fn spread_raw<S: Simd>(
+    _simd: S,
+    energy: &[f64; NUM_BANDS],
+    tables: &Spreading,
+) -> [f64; NUM_BANDS] {
     let mut upper_powered = [0.0; NUM_BANDS];
     let mut normalized_powered = [0.0; NUM_BANDS];
     for band in 0..NUM_BANDS {
-        let upper_slope = 10.0f64.powf((-2.4 - 23.0 / FC[band]) * BAND_WIDTH);
-        let energy_dependent = upper_slope * energy[band].powf(0.2 * BAND_WIDTH);
-        let lower_sum = (1.0 - lower_slope.powi((band + 1) as i32)) / (1.0 - lower_slope);
+        let energy_dependent = tables.upper_slope[band] * pow_005(energy[band]);
         let upper_sum =
-            (1.0 - energy_dependent.powi((NUM_BANDS - band) as i32)) / (1.0 - energy_dependent);
-        let normalized = energy[band] / (lower_sum + upper_sum - 1.0);
-        upper_powered[band] = energy_dependent.powf(EXPONENT);
-        normalized_powered[band] = normalized.powf(EXPONENT);
+            (1.0 - positive_powi(energy_dependent, NUM_BANDS - band)) / (1.0 - energy_dependent);
+        let normalized = energy[band] / (tables.lower_sum[band] + upper_sum - 1.0);
+        upper_powered[band] = pow_04(energy_dependent);
+        normalized_powered[band] = pow_04(normalized);
     }
 
     let mut spread = [0.0; NUM_BANDS];
     spread[NUM_BANDS - 1] = normalized_powered[NUM_BANDS - 1];
     for band in (0..NUM_BANDS - 1).rev() {
-        spread[band] = lower_powered * spread[band + 1] + normalized_powered[band];
+        spread[band] = tables.lower_powered * spread[band + 1] + normalized_powered[band];
     }
     for band in 0..NUM_BANDS - 1 {
+        let slope = upper_powered[band];
+        let slope2 = slope * slope;
+        let slope3 = slope2 * slope;
+        let slope4 = slope2 * slope2;
+        let slope5 = slope4 * slope;
+        let slope6 = slope4 * slope2;
+        let slope7 = slope4 * slope3;
+        let slope8 = slope4 * slope4;
         let mut value = normalized_powered[band];
-        for target in spread.iter_mut().skip(band + 1) {
-            value *= upper_powered[band];
+        let mut chunks = spread[band + 1..].chunks_exact_mut(8);
+        for targets in &mut chunks {
+            targets[0] += value * slope;
+            targets[1] += value * slope2;
+            targets[2] += value * slope3;
+            targets[3] += value * slope4;
+            targets[4] += value * slope5;
+            targets[5] += value * slope6;
+            targets[6] += value * slope7;
+            targets[7] += value * slope8;
+            value *= slope8;
+        }
+        for target in chunks.into_remainder() {
+            value *= slope;
             *target += value;
         }
     }
-    spread.map(|value| value.powf(1.0 / EXPONENT))
+    // The final exponent is exactly 1 / 0.4 = 2.5, for which multiplication
+    // and a square root are much cheaper than a generic pow implementation.
+    spread.map(|value| value * value * value.sqrt())
+}
+
+#[inline(always)]
+fn positive_powi(mut base: f64, mut exponent: usize) -> f64 {
+    debug_assert!(exponent > 0);
+    let mut result = 1.0;
+    while exponent > 1 {
+        if exponent & 1 != 0 {
+            result *= base;
+        }
+        exponent >>= 1;
+        base *= base;
+    }
+    result * base
 }
 
 fn probability_of_detection(
@@ -498,19 +568,28 @@ fn probability_of_detection(
         let reference_db = 10.0 * energy[0][band].log10();
         let degraded_db = 10.0 * energy[1][band].log10();
         let difference = reference_db - degraded_db;
-        let (level, exponent) = if difference > 0.0 {
-            (0.3 * reference_db + 0.7 * degraded_db, 4.0)
+        let reference_louder = difference > 0.0;
+        let level = if reference_louder {
+            0.3 * reference_db + 0.7 * degraded_db
         } else {
-            (degraded_db, 6.0)
+            degraded_db
         };
         let threshold = if level > 0.0 {
-            5.95072 * (6.39468 / level).powf(1.71332)
+            5.95072 * pow_171332(6.39468 / level)
                 + C[0]
                 + level * (C[1] + level * (C[2] + level * (C[3] + level * C[4])))
         } else {
             1e30
         };
-        probability[band] = 1.0 - 0.5f64.powf((difference / threshold).powf(exponent));
+        let ratio = difference / threshold;
+        let ratio_squared = ratio * ratio;
+        let ratio_fourth = ratio_squared * ratio_squared;
+        let powered_difference = if reference_louder {
+            ratio_fourth
+        } else {
+            ratio_fourth * ratio_squared
+        };
+        probability[band] = 1.0 - (-powered_difference).exp2();
         steps[band] = difference.trunc().abs() / threshold;
     }
     (probability, steps)
@@ -541,7 +620,8 @@ fn average_distorted_blocks(probabilities: &[f64], steps: &[f64]) -> f64 {
 
 /// Applies the published 2f-model regression to its two PEAQ MOVs.
 pub fn estimate_mushra(avg_mod_diff1: f64, adb: f64) -> f64 {
-    56.1345 / (1.0 + (-0.0282 * avg_mod_diff1 - 0.8628).powi(2)) - 27.1451 * adb + 86.3515
+    let modulation_term = -0.0282 * avg_mod_diff1 - 0.8628;
+    56.1345 / (1.0 + modulation_term * modulation_term) - 27.1451 * adb + 86.3515
 }
 
 fn data_boundaries<R: AsRef<[f32]>>(channels: &[R]) -> Option<(usize, usize)> {
@@ -618,6 +698,55 @@ fn boundary_end(samples: &[f32], length: usize, threshold: f64) -> Option<usize>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optimized_spreading_matches_direct_formula() {
+        fn direct(energy: &[f64; NUM_BANDS], tables: &Spreading) -> [f64; NUM_BANDS] {
+            let mut upper_powered = [0.0; NUM_BANDS];
+            let mut normalized_powered = [0.0; NUM_BANDS];
+            for band in 0..NUM_BANDS {
+                let energy_dependent = tables.upper_slope[band] * energy[band].powf(0.05);
+                let upper_sum = (1.0 - energy_dependent.powi((NUM_BANDS - band) as i32))
+                    / (1.0 - energy_dependent);
+                let normalized = energy[band] / (tables.lower_sum[band] + upper_sum - 1.0);
+                upper_powered[band] = energy_dependent.powf(0.4);
+                normalized_powered[band] = normalized.powf(0.4);
+            }
+            let mut spread = [0.0; NUM_BANDS];
+            spread[NUM_BANDS - 1] = normalized_powered[NUM_BANDS - 1];
+            for band in (0..NUM_BANDS - 1).rev() {
+                spread[band] = tables.lower_powered * spread[band + 1] + normalized_powered[band];
+            }
+            for band in 0..NUM_BANDS - 1 {
+                let mut value = normalized_powered[band];
+                for target in spread.iter_mut().skip(band + 1) {
+                    value *= upper_powered[band];
+                    *target += value;
+                }
+            }
+            spread.map(|value| value.powf(2.5))
+        }
+
+        let level = Level::new();
+        let tables = Spreading::new();
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..100 {
+            let energy = std::array::from_fn(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let exponent = 1013 + state % 51; // Approximately 1e-3 .. 1e12.
+                let mantissa = state & 0xf_ffff_ffff_ffff;
+                f64::from_bits((exponent << 52) | mantissa)
+            });
+            let expected = direct(&energy, &tables);
+            let actual = dispatch!(level, simd => spread_raw(simd, &energy, &tables));
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                let relative_error = ((actual - expected) / expected).abs();
+                assert!(relative_error < 2e-13, "relative error {relative_error:e}");
+            }
+        }
+    }
 
     #[test]
     fn published_regression_example() {

@@ -11,7 +11,7 @@ use visqol::{AudioSignal, Visqol};
 
 fn load(relative: &str) -> AudioSignal {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../visqol/testdata/conformance_testdata_subset")
+        .join("../../test_corpus")
         .join(relative);
     assert!(
         path.exists(),

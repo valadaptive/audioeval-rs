@@ -48,8 +48,9 @@ compiling anything itself: the vendored checkout in `visqol/` carries a small
 pure-C ABI wrapper (`visqol/src/visqol_capi.cc`) with a `//:visqol_capi`
 target that bazel links into one self-contained `libvisqol_capi.so`. The
 crate's build script runs `bazelisk build //:visqol_capi` (incremental; the
-first build fetches and compiles all dependencies and takes a while) and
-points the linker (and rpath) at the result.
+first build fetches and compiles all dependencies and takes a while), stages
+the result in its Cargo `OUT_DIR`, and points the linker at it. Cargo supplies
+that directory to the dynamic loader when it runs the tests and benchmarks.
 
 Requirements: `bazelisk` on PATH (or set `BAZEL`), and the `visqol` checkout
 on a branch containing the capi target.

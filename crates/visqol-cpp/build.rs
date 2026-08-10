@@ -58,28 +58,44 @@ fn main() {
         lib.display(),
         visqol_dir.display()
     );
-    // Canonicalize: bazel-bin may itself be a symlink, and an rpath should
-    // not depend on the symlink surviving future builds.
-    let lib_dir = lib_dir.canonicalize().unwrap();
+    // Stage build-produced dynamic libraries under OUT_DIR. Cargo adds native
+    // search paths there to the loader environment when it runs tests and
+    // benches; paths into Bazel's external cache are deliberately excluded.
+    // Keeping this detail here also means dependent crates need no build
+    // script of their own.
+    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let staged_lib = out_dir.join("libvisqol_capi.so");
+    // Bazel's output is read-only, and fs::copy preserves that mode. Remove a
+    // previous staged copy first so a later build-script run can replace it.
+    match std::fs::remove_file(&staged_lib) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => panic!("failed to remove {}: {e}", staged_lib.display()),
+    }
+    std::fs::copy(&lib, &staged_lib).unwrap_or_else(|e| {
+        panic!(
+            "failed to copy {} to {}: {e}",
+            lib.display(),
+            staged_lib.display()
+        )
+    });
 
-    println!("cargo::warning=visqol-cpp: linking {}", lib.display());
-    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    println!(
+        "cargo::warning=visqol-cpp: linking {}",
+        staged_lib.display()
+    );
+    println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=dylib=visqol_capi");
-    // Let test/bench binaries find the shared library at runtime.
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
-    // rustc-link-arg does not propagate to dependent crates, so also export
-    // the directory as metadata: dependent binaries/benches must re-emit an
-    // rpath from DEP_VISQOL_CAPI_LIB_DIR in their own build script (see the
-    // benchmarks crate for an example).
-    println!("cargo::metadata=lib_dir={}", lib_dir.display());
 
-    // Track the .so itself: a `bazel clean` (or output_base change) removes
+    // Track the Bazel output: a `bazel clean` (or output_base change) removes
     // it, and cargo treats a missing rerun-if-changed file as stale, which
-    // reruns this script (and bazel) instead of leaving a dangling rpath.
+    // reruns this script and restores the staged copy.
     println!("cargo:rerun-if-changed={}", lib.display());
     println!("cargo:rerun-if-env-changed=VISQOL_DIR");
     println!("cargo:rerun-if-env-changed=VISQOL_CAPI_LIB_DIR");
     println!("cargo:rerun-if-env-changed=BAZEL");
+    println!("cargo:rerun-if-env-changed=CC");
+    println!("cargo:rerun-if-env-changed=CXX");
     println!(
         "cargo:rerun-if-changed={}",
         visqol_dir.join("src/visqol_capi.cc").display()

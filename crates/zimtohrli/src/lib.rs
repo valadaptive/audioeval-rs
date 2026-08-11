@@ -28,6 +28,24 @@
 //! println!("MOS: {mos}");
 //! ```
 //!
+//! Audio can also be analyzed incrementally without retaining the whole PCM
+//! signal in memory:
+//!
+//! ```no_run
+//! use zimtohrli::{Spectrogram, Zimtohrli};
+//!
+//! let chunks: &[&[f32]] = &[&[0.0; 1024], &[0.0; 1024]];
+//! let zimt = Zimtohrli::default();
+//! let mut analyzer = zimt.chunked_analyzer();
+//! let mut frames = Vec::new();
+//! for chunk in chunks {
+//!     analyzer.process(chunk, &mut frames);
+//! }
+//! analyzer.flush(&mut frames);
+//! let spectrogram = Spectrogram::from_frames(frames);
+//! # assert_eq!(spectrogram.num_steps(), analyzer.num_steps());
+//! ```
+//!
 //! ## Usage notes
 //!
 //! Inputs are expected to be 48kHz mono signals. You must use something like [rubato](https://crates.io/crates/rubato) to resample the input before passing it in.
@@ -61,7 +79,7 @@
 //!
 //! ## Conformance and exactness
 //!
-//! This crate matches the results of the original C++ `zimtohrli` repo (as of [this commit](https://github.com/google/zimtohrli/tree/67c28b1b5b78297a38ec01681863ab114c1e9841)) to 1e-5.
+//! This crate matches the results of the original C++ `zimtohrli` repo (as of [this commit](https://github.com/google/zimtohrli/tree/aad0469673a4aec594d62b82e2b5f95e85b76362)) to 1e-5.
 //!
 //! Matching the C++ original *exactly* is impossible, since the C++ code itself is nondeterministic: it is compiled with "fast math" flags, and uses libm functions which may return different results across different platforms.
 //!
@@ -69,14 +87,14 @@
 //!
 //! ## Performance
 //!
-//! Some rough benchmarks on my Ryzen 7 7700X put this crate around 35-40% faster than the original C++ version on full analysis (spectrogram creation + distance calculation, not counting I/O or resampling). This goes for analysis both with and without the DTW step.
+//! Some rough benchmarks on my Ryzen 7 7700X put this crate around 30-35% faster than the original C++ version on full analysis (spectrogram creation + distance calculation, not counting I/O or resampling). This goes for analysis both with and without the DTW step.
 //!
 //! The original C++ code does not perform any runtime CPU feature detection, whereas this crate does. When benchmarking, the original code was compiled with `-march=x86-64-v3`. For some reason, `x86-64-v4` was slower.
 //!
 //! If DTW is required, but conformance with the original C++ version is *not*, you may use the [`Zimtohrli::dtw_band_radius`] option to reduce the search radius considered during the DTW alignment step. This is an extension of the API exclusive to this crate.
 
 use fearless_simd::{Level, Simd, dispatch, f32x16, prelude::*};
-use libm::{cosf, exp, expf, logf, pow, sinf};
+use libm::{cosf, expf, logf, pow, sinf};
 use std::{
     f32::{self, consts::PI},
     ops::{Index, IndexMut},
@@ -89,7 +107,82 @@ use fast_pow::{pow_p0, pow_p1, pow_pp};
 
 const SAMPLE_RATE: f32 = 48000.0;
 
-const NUM_ROTATORS: usize = 128;
+/// Number of frequency channels in a Zimtohrli spectrogram frame.
+pub const NUM_CHANNELS: usize = 128;
+
+const NUM_ROTATORS: usize = NUM_CHANNELS;
+const KERNEL_SIZE: usize = 32;
+const COMPACT_THRESHOLD: usize = 4096;
+
+static RESO_KERNEL: [f32; KERNEL_SIZE] = [
+    -0.0076247065632976318,
+    0.0039104155534537069,
+    0.0006684663662401936,
+    0.0071559704794996589,
+    -0.0027931528839390098,
+    0.0001368658992949717,
+    -0.0065802540559526824,
+    -0.006574266432654235,
+    0.0034740030608061525,
+    0.0030263702264320012,
+    -0.0029378401470635364,
+    0.0034368516858611412,
+    0.0020915727560313845,
+    -0.001541122014895714,
+    0.0033152434154573407,
+    0.0015489639154823477,
+    -0.012691890416423556,
+    -0.00027840484849307723,
+    -0.0010427818083574192,
+    -0.0087889956707155811,
+    -0.0066266333272295289,
+    -0.00080043637110705163,
+    -0.0072998536521213225,
+    0.0036816757141278035,
+    -0.00031555808271841742,
+    0.00099264355318687508,
+    -0.0012897138783731826,
+    0.0013771982014390573,
+    0.0070121198631592861,
+    -0.0016488166452599629,
+    -0.00727301918260589,
+    0.010964231292090421,
+];
+
+static LINEAR_KERNEL: [f32; KERNEL_SIZE] = [
+    -0.19947158175459692,
+    0.020092596724127186,
+    -0.065549345816240306,
+    0.059315467827374985,
+    0.24679907672434401,
+    -0.14582584331716622,
+    -0.083626881941168935,
+    0.31874018187263292,
+    0.22397287387339976,
+    0.036279108994617872,
+    -0.13919343535956649,
+    0.04950990842192754,
+    -0.027271514202057801,
+    -0.00099846257278084238,
+    -0.10798654028268029,
+    -0.10489917207275569,
+    -0.095906755569884164,
+    -0.21168952706515187,
+    0.83249555081867532,
+    0.58484205043268755,
+    -0.21828800943250842,
+    0.080106893472851701,
+    0.93016317182367492,
+    -0.49663918345960828,
+    -1.6197347842868257,
+    -0.18383066061195377,
+    0.6236802270978099,
+    1.1976849288800944,
+    -0.70212522492743401,
+    0.90598962344860279,
+    -0.0018858573753579057,
+    -0.41452533138089309,
+];
 
 /// Converts energy values in frequency channels to loudness in dB using
 /// psychoacoustic weighting factors for each frequency band. Applies
@@ -247,6 +340,33 @@ struct Rotators {
 }
 
 impl Rotators {
+    fn new(downsample: usize) -> Self {
+        const KHZ_TO_RAD: f32 = 2.0 * PI / SAMPLE_RATE;
+        const WINDOW: f64 = 0.9996073584827937;
+        const BANDWIDTH_MAGIC: f64 = 0.73227703638356523;
+        const SCALE: f64 = 931912404783.44507;
+
+        let downsample = downsample.max(1);
+        let gainer = (SCALE / downsample as f64).sqrt() as f32;
+        let mut rotators = Self {
+            rot: [[0.0; _]; _],
+            accu: [[0.0; _]; _],
+            window: [0.0; _],
+            gain: [0.0; _],
+        };
+        for i in 0..NUM_ROTATORS {
+            let bandwidth = calculate_bandwidth_in_hz(i);
+            rotators.window[i] = pow(WINDOW, bandwidth as f64 * BANDWIDTH_MAGIC) as f32;
+            let window_m1 = 1.0 - rotators.window[i];
+            let f = freq(i) * KHZ_TO_RAD;
+            rotators.gain[i] = gainer * (window_m1 * window_m1 * window_m1) * freq(i) / bandwidth;
+            rotators.rot[0][i] = cosf(f);
+            rotators.rot[1][i] = -sinf(f);
+            rotators.rot[2][i] = rotators.gain[i];
+        }
+        rotators
+    }
+
     /// Renormalizes the rotating phasors to prevent numerical drift.
     /// Called periodically during signal processing.
     fn occasionally_renormalize(&mut self) {
@@ -323,185 +443,142 @@ impl Rotators {
             }
         }
     }
+}
 
-    #[inline(always)]
-    fn filter_and_downsample_inner<S: Simd>(
-        simd: S,
-        input: &[f32],
-        out: &mut [f32],
-        out_shape0: usize,
-        out_stride: usize,
-        downsample: usize,
-    ) {
-        const KHZ_TO_RAD: f32 = 2.0 * PI / SAMPLE_RATE;
-        const WINDOW: f64 = 0.9996073584827937;
-        const BANDWIDTH_MAGIC: f64 = 0.73227703638356523;
+/// Stateful analyzer for processing 48 kHz mono audio in arbitrary-sized
+/// chunks.
+///
+/// [`Self::process`] appends each completed frame as [`NUM_CHANNELS`]
+/// consecutive values to the caller's output vector. Call [`Self::flush`] at
+/// an end-of-stream boundary to zero-pad the FIR lookahead and emit the final
+/// partial frame. A single analyzer must not be used from multiple threads at
+/// once, but separate analyzers can be processed independently.
+pub struct ChunkedAnalyzer {
+    level: Level,
+    downsample: usize,
+    downsample_window: Box<[f32]>,
+    rotators: Rotators,
+    resonator: Resonator,
+    frame_energy: Box<[f32; 2 * NUM_ROTATORS]>,
+    sample_buffer: Vec<f32>,
+    buffer_head: usize,
+    downsample_index: usize,
+    num_steps: usize,
+}
 
-        // A big value for normalization. Ideally 1.0, but this works better
-        // for an unknown reason even if the base noise level is adapted similarly.
-        const SCALE: f64 = 931912404783.44507;
+impl ChunkedAnalyzer {
+    /// Creates an analyzer using the metric's SIMD level and perceptual frame
+    /// size.
+    pub fn new(zimtohrli: &Zimtohrli) -> Self {
+        Self::with_options(zimtohrli.level, zimtohrli.samples_per_perceptual_block)
+    }
 
-        let gainer = (SCALE / downsample as f64).sqrt() as f32;
-        let mut rotators = Rotators {
-            rot: [[0.0; _]; _],
-            accu: [[0.0; _]; _],
-            window: [0.0; _],
-            gain: [0.0; _],
-        };
-        for i in 0..NUM_ROTATORS {
-            let bandwidth = calculate_bandwidth_in_hz(i);
-            rotators.window[i] = pow(WINDOW, bandwidth as f64 * BANDWIDTH_MAGIC) as f32;
-            let window_m1 = 1.0 - rotators.window[i];
-            let f = freq(i) * KHZ_TO_RAD;
-            rotators.gain[i] = gainer * (window_m1 * window_m1 * window_m1) * freq(i) / bandwidth;
-            rotators.rot[0][i] = cosf(f);
-            rotators.rot[1][i] = -sinf(f);
-            rotators.rot[2][i] = rotators.gain[i];
-            // rotators.rot[3][i] is already 0.0
-        }
-
-        for zz in 0..out_shape0 {
-            for k in 0..NUM_ROTATORS {
-                out[zz * out_stride + k] = 0.0;
-            }
-        }
-
+    fn with_options(level: Level, downsample: usize) -> Self {
+        let downsample = downsample.max(1);
         let downsample_window = (0..downsample)
             .map(|i| {
-                (1.0 / (1.0
-                    + exp(
-                        8.0246040186567118 * ((2.0 / downsample as f64) * (i as f64 + 0.5) - 1.0)
-                    ))) as f32
+                1.0 / (1.0
+                    + expf(
+                        8.0246040186567118_f32
+                            * ((2.0 / downsample as f32) * (i as f32 + 0.5) - 1.0),
+                    ))
             })
-            .collect::<Vec<f32>>();
-
-        let mut resonator = Resonator::default();
-        let mut out_ix = 0;
-
-        const KERNEL_SIZE: usize = 32;
-
-        static RESO_KERNEL: [f32; KERNEL_SIZE] = [
-            -0.0076247065632976318,
-            0.0039104155534537069,
-            0.0006684663662401936,
-            0.0071559704794996589,
-            -0.0027931528839390098,
-            0.0001368658992949717,
-            -0.0065802540559526824,
-            -0.006574266432654235,
-            0.0034740030608061525,
-            0.0030263702264320012,
-            -0.0029378401470635364,
-            0.0034368516858611412,
-            0.0020915727560313845,
-            -0.001541122014895714,
-            0.0033152434154573407,
-            0.0015489639154823477,
-            -0.012691890416423556,
-            -0.00027840484849307723,
-            -0.0010427818083574192,
-            -0.0087889956707155811,
-            -0.0066266333272295289,
-            -0.00080043637110705163,
-            -0.0072998536521213225,
-            0.0036816757141278035,
-            -0.00031555808271841742,
-            0.00099264355318687508,
-            -0.0012897138783731826,
-            0.0013771982014390573,
-            0.0070121198631592861,
-            -0.0016488166452599629,
-            -0.00727301918260589,
-            0.010964231292090421,
-        ];
-        static LINEAR_KERNEL: [f32; KERNEL_SIZE] = [
-            -0.19947158175459692,
-            0.020092596724127186,
-            -0.065549345816240306,
-            0.059315467827374985,
-            0.24679907672434401,
-            -0.14582584331716622,
-            -0.083626881941168935,
-            0.31874018187263292,
-            0.22397287387339976,
-            0.036279108994617872,
-            -0.13919343535956649,
-            0.04950990842192754,
-            -0.027271514202057801,
-            -0.00099846257278084238,
-            -0.10798654028268029,
-            -0.10489917207275569,
-            -0.095906755569884164,
-            -0.21168952706515187,
-            0.83249555081867532,
-            0.58484205043268755,
-            -0.21828800943250842,
-            0.080106893472851701,
-            0.93016317182367492,
-            -0.49663918345960828,
-            -1.6197347842868257,
-            -0.18383066061195377,
-            0.6236802270978099,
-            1.1976849288800944,
-            -0.70212522492743401,
-            0.90598962344860279,
-            -0.0018858573753579057,
-            -0.41452533138089309,
-        ];
-
-        let mut in_ix = 0;
-        let mut dix = 0;
-        while in_ix + KERNEL_SIZE < input.len() {
-            let weight = downsample_window[dix];
-            let in_slice: &[f32; KERNEL_SIZE] =
-                input[in_ix..in_ix + KERNEL_SIZE].try_into().unwrap();
-            rotators.increment_all(
-                simd,
-                resonator.update(dot32(in_slice, &RESO_KERNEL)) + dot32(in_slice, &LINEAR_KERNEL),
-                EnergyOutput {
-                    values: out,
-                    step: out_ix,
-                    stride: out_stride,
-                    weight,
-                    has_next: out_ix + 1 < out_shape0,
-                },
-            );
-
-            dix += 1;
-            if dix == downsample || in_ix + KERNEL_SIZE + 1 == input.len() {
-                // NB: the parentheses around `&mut out[..]` matter: without
-                // them, `try_into` resolves to the by-value `TryFrom<&[f32]>
-                // for [f32; N]` impl and loudness_db mutates a temporary copy
-                // of the row instead of the spectrogram itself.
-                loudness_db(
-                    (&mut out[out_stride * out_ix..out_stride * out_ix + NUM_ROTATORS])
-                        .try_into()
-                        .unwrap(),
-                );
-
-                out_ix += 1;
-                if out_ix >= out_shape0 {
-                    break;
-                }
-                dix = 0;
-                rotators.occasionally_renormalize();
-            }
-
-            in_ix += 1;
+            .collect();
+        Self {
+            level,
+            downsample,
+            downsample_window,
+            rotators: Rotators::new(downsample),
+            resonator: Resonator::default(),
+            frame_energy: Box::new([0.0; 2 * NUM_ROTATORS]),
+            sample_buffer: Vec::new(),
+            buffer_head: 0,
+            downsample_index: 0,
+            num_steps: 0,
         }
     }
 
-    fn filter_and_downsample(
-        level: Level,
-        input: &[f32],
-        out: &mut [f32],
-        out_shape0: usize,
-        out_stride: usize,
-        downsample: usize,
-    ) {
-        dispatch!(level, simd => {
-            Self::filter_and_downsample_inner(simd, input, out, out_shape0, out_stride, downsample)
-        })
+    /// Processes `chunk` and appends any completed, row-major spectrogram
+    /// frames to `output_frames`.
+    pub fn process(&mut self, chunk: &[f32], output_frames: &mut Vec<f32>) {
+        dispatch!(self.level, simd => self.process_inner(simd, chunk, output_frames));
+    }
+
+    #[inline(always)]
+    fn process_inner<S: Simd>(&mut self, simd: S, chunk: &[f32], output_frames: &mut Vec<f32>) {
+        self.sample_buffer.extend_from_slice(chunk);
+        let mut processed = 0;
+
+        while self.buffer_head + processed + KERNEL_SIZE <= self.sample_buffer.len() {
+            let start = self.buffer_head + processed;
+            let input: &[f32; KERNEL_SIZE] = self.sample_buffer[start..start + KERNEL_SIZE]
+                .try_into()
+                .unwrap();
+            let signal =
+                self.resonator.update(dot32(input, &RESO_KERNEL)) + dot32(input, &LINEAR_KERNEL);
+            self.rotators.increment_all(
+                simd,
+                signal,
+                EnergyOutput {
+                    values: &mut self.frame_energy[..],
+                    step: 0,
+                    stride: NUM_ROTATORS,
+                    weight: self.downsample_window[self.downsample_index],
+                    has_next: true,
+                },
+            );
+
+            processed += 1;
+            self.downsample_index += 1;
+            if self.downsample_index == self.downsample {
+                self.emit_frame(output_frames);
+                self.frame_energy.copy_within(NUM_ROTATORS.., 0);
+                self.frame_energy[NUM_ROTATORS..].fill(0.0);
+                self.downsample_index = 0;
+                self.rotators.occasionally_renormalize();
+            }
+        }
+
+        self.buffer_head += processed;
+        if self.buffer_head > COMPACT_THRESHOLD {
+            let remaining = self.sample_buffer.len() - self.buffer_head;
+            self.sample_buffer.copy_within(self.buffer_head.., 0);
+            self.sample_buffer.truncate(remaining);
+            self.buffer_head = 0;
+        }
+    }
+
+    /// Finalizes all currently buffered samples and appends the final partial
+    /// frame, if any, to `output_frames`.
+    ///
+    /// Calling this repeatedly without an intervening [`Self::process`] call
+    /// is a no-op.
+    pub fn flush(&mut self, output_frames: &mut Vec<f32>) {
+        if self.sample_buffer.len() > self.buffer_head {
+            self.process(&[0.0; KERNEL_SIZE - 1], output_frames);
+            self.sample_buffer.clear();
+            self.buffer_head = 0;
+        }
+
+        if self.downsample_index > 0 {
+            for channel in 0..NUM_ROTATORS {
+                self.frame_energy[channel] += self.frame_energy[NUM_ROTATORS + channel];
+            }
+            self.emit_frame(output_frames);
+            self.frame_energy.fill(0.0);
+            self.downsample_index = 0;
+        }
+    }
+
+    /// Returns the total number of frames emitted by this analyzer.
+    pub fn num_steps(&self) -> usize {
+        self.num_steps
+    }
+
+    fn emit_frame(&mut self, output_frames: &mut Vec<f32>) {
+        loudness_db((&mut self.frame_energy[..NUM_ROTATORS]).try_into().unwrap());
+        output_frames.extend_from_slice(&self.frame_energy[..NUM_ROTATORS]);
+        self.num_steps += 1;
     }
 }
 
@@ -529,6 +606,21 @@ impl Spectrogram {
             num_steps,
             num_dims,
             values: vec![0.0; num_steps * num_dims].into_boxed_slice(),
+        }
+    }
+
+    /// Builds a spectrogram from row-major frames emitted by
+    /// [`ChunkedAnalyzer`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `values.len()` is not a multiple of [`NUM_CHANNELS`].
+    pub fn from_frames(values: Vec<f32>) -> Self {
+        assert_eq!(values.len() % NUM_CHANNELS, 0);
+        Self {
+            num_steps: values.len() / NUM_CHANNELS,
+            num_dims: NUM_CHANNELS,
+            values: values.into_boxed_slice(),
         }
     }
 
@@ -1029,6 +1121,12 @@ pub struct Zimtohrli {
     /// The window in channels when computing the NSIM.
     pub nsim_channel_window: usize,
     pub perceptual_sample_rate: f32,
+    /// Number of input samples in one perceptual spectrogram frame.
+    ///
+    /// Streaming requires this to be fixed before processing begins. Keep it
+    /// consistent with [`Self::perceptual_sample_rate`]; the default is 564
+    /// samples, or about 85.1 frames per second at 48 kHz.
+    pub samples_per_perceptual_block: usize,
     /// Optional Sakoe-Chiba band radius for the DTW in [Self::distance], in
     /// perceptual time steps (roughly [Self::perceptual_sample_rate] steps per
     /// second, ~85 by default).
@@ -1052,34 +1150,49 @@ impl Default for Zimtohrli {
             nsim_step_window: 8,
             nsim_channel_window: 5,
             perceptual_sample_rate,
+            samples_per_perceptual_block,
             dtw_band_radius: None,
         }
     }
 }
 
 impl Zimtohrli {
+    /// Creates a stateful analyzer for processing audio in arbitrary-sized
+    /// chunks.
+    pub fn chunked_analyzer(&self) -> ChunkedAnalyzer {
+        ChunkedAnalyzer::new(self)
+    }
+
+    fn analyze_frames(&self, signal: &[f32]) -> Vec<f32> {
+        let mut analyzer = self.chunked_analyzer();
+        let mut frames = Vec::with_capacity(self.spectrogram_steps(signal.len()) * NUM_ROTATORS);
+        analyzer.process(signal, &mut frames);
+        analyzer.flush(&mut frames);
+        frames
+    }
+
     /// Analyzes an audio signal and fills the provided spectrogram.
-    /// signal: input audio samples at 48kHz, range [-1, 1]
-    /// spectrogram: pre-allocated output spectrogram to fill
+    ///
+    /// `signal` contains 48 kHz mono samples in `[-1, 1]`. If the preallocated
+    /// spectrogram is too short, output is truncated; if it is too long, the
+    /// unused frames are zero-filled.
     pub fn analyze_into(&self, signal: &[f32], spectrogram: &mut Spectrogram) {
         assert_eq!(spectrogram.num_dims, NUM_ROTATORS);
-        Rotators::filter_and_downsample(
-            self.level,
-            signal,
-            &mut spectrogram.values,
-            spectrogram.num_steps,
-            spectrogram.num_dims,
-            signal.len() / spectrogram.num_steps,
-        );
+        let frames = self.analyze_frames(signal);
+        let copy_len = spectrogram.values.len().min(frames.len());
+        spectrogram.values[..copy_len].copy_from_slice(&frames[..copy_len]);
+        spectrogram.values[copy_len..].fill(0.0);
     }
 
     /// Analyzes an audio signal and returns a new spectrogram.
     /// signal: input audio samples at 48kHz, range [-1, 1]
     /// Returns: perceptual spectrogram representation
     pub fn analyze(&self, signal: &[f32]) -> Spectrogram {
-        let mut spec = Spectrogram::new(self.spectrogram_steps(signal.len()), NUM_ROTATORS);
-        self.analyze_into(signal, &mut spec);
-        spec
+        let expected_len = self.spectrogram_steps(signal.len()) * NUM_ROTATORS;
+        let mut frames = self.analyze_frames(signal);
+        frames.resize(expected_len, 0.0);
+        frames.truncate(expected_len);
+        Spectrogram::from_frames(frames)
     }
 
     /// Calculates the number of time steps in the output spectrogram
@@ -1279,19 +1392,11 @@ mod rotator_tests {
     }
 
     fn filter_at_level(level: Level, input: &[f32]) -> Vec<u32> {
-        const STEPS: usize = 8;
-        let mut out = vec![0.0; STEPS * NUM_ROTATORS];
-        dispatch!(level, simd => {
-            Rotators::filter_and_downsample_inner(
-                simd,
-                input,
-                &mut out,
-                STEPS,
-                NUM_ROTATORS,
-                input.len() / STEPS,
-            );
-        });
-        out.into_iter().map(f32::to_bits).collect()
+        let mut analyzer = ChunkedAnalyzer::with_options(level, 512);
+        let mut frames = Vec::new();
+        analyzer.process(input, &mut frames);
+        analyzer.flush(&mut frames);
+        frames.into_iter().map(f32::to_bits).collect()
     }
 
     #[test]

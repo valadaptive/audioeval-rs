@@ -516,10 +516,11 @@ impl Rotators {
 ///   ...,
 ///   [samplem_dim0, samplem_dim1, ..., samplem_dimn],
 /// ]
+#[derive(Clone)]
 pub struct Spectrogram {
-    pub num_steps: usize,
-    pub num_dims: usize,
-    pub values: Box<[f32]>,
+    num_steps: usize,
+    num_dims: usize,
+    values: Box<[f32]>,
 }
 
 impl Spectrogram {
@@ -546,6 +547,19 @@ impl Spectrogram {
         for v in self.values.iter_mut() {
             *v *= f;
         }
+    }
+
+    pub fn values(&self) -> &[f32] {
+        &self.values
+    }
+
+    pub fn num_steps(&self) -> usize {
+        self.num_steps
+    }
+
+    pub fn num_dims(&self) -> usize {
+        // TODO: remove this field and getter; it should always just be NUM_ROTATORS
+        self.num_dims
     }
 }
 
@@ -1015,8 +1029,6 @@ pub struct Zimtohrli {
     /// The window in channels when computing the NSIM.
     pub nsim_channel_window: usize,
     pub perceptual_sample_rate: f32,
-    /// The reference dB SPL of a sine signal of amplitude 1.
-    pub full_scale_sine_db: f32,
     /// Optional Sakoe-Chiba band radius for the DTW in [Self::distance], in
     /// perceptual time steps (roughly [Self::perceptual_sample_rate] steps per
     /// second, ~85 by default).
@@ -1040,7 +1052,6 @@ impl Default for Zimtohrli {
             nsim_step_window: 8,
             nsim_channel_window: 5,
             perceptual_sample_rate,
-            full_scale_sine_db: 78.3,
             dtw_band_radius: None,
         }
     }

@@ -130,6 +130,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "audioeval-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "audio-io",
+ "clap",
+ "two-f-model",
+ "visqol",
+ "zimtohrli",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

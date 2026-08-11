@@ -245,6 +245,11 @@ impl Visqol {
         }
     }
 
+    /// Whether this analysis is in speech mode and hence expects 16kHz input.
+    pub fn is_speech_mode(&self) -> bool {
+        self.speech_mode
+    }
+
     /// Run an analysis over a reference and degraded signal.
     pub fn run(
         &self,

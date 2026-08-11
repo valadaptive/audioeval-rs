@@ -14,7 +14,7 @@ fn main() {
     let argv = env::args_os().collect::<Vec<_>>();
     let root = PathBuf::from(&argv[1]);
     let csv = fs::read_to_string(&argv[2]).unwrap();
-    let mut model = TwoFModel::new();
+    let model = TwoFModel::new();
 
     for (index, line) in csv.lines().skip(1).enumerate() {
         let mut columns = line.split(';');

@@ -1,0 +1,17 @@
+[package]
+name = "audioeval-cli"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[dependencies]
+anyhow.workspace = true
+audio-io.workspace = true
+clap = { workspace = true, features = ["string"] }
+
+two-f-model.workspace = true
+visqol.workspace = true
+zimtohrli.workspace = true
+
+[lints]
+workspace = true

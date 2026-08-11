@@ -50,7 +50,6 @@ pub struct TwoFResult {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    UnsupportedSampleRate(u32),
     InvalidChannelCount { reference: usize, degraded: usize },
     UnequalChannelLengths,
     TooFewSamples,
@@ -59,12 +58,6 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnsupportedSampleRate(rate) => {
-                write!(
-                    f,
-                    "the 2f-model only supports 48000 Hz input, got {rate} Hz"
-                )
-            }
             Self::InvalidChannelCount {
                 reference,
                 degraded,
@@ -110,6 +103,20 @@ impl Default for ChannelState {
     }
 }
 
+struct FftBuffers {
+    scratch: Vec<Complex<f64>>,
+    output: Vec<Complex<f64>>,
+}
+
+impl FftBuffers {
+    fn new(fft: &dyn RealToComplex<f64>) -> Self {
+        Self {
+            scratch: fft.make_scratch_vec(),
+            output: fft.make_output_vec(),
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FrameMov {
     mod_diff: f64,
@@ -146,9 +153,6 @@ impl Spreading {
 pub struct TwoFModel {
     simd_level: Level,
     fft: Arc<dyn RealToComplex<f64>>,
-    fft_input: Vec<f64>,
-    fft_output: Vec<Complex<f64>>,
-    fft_scratch: Vec<Complex<f64>>,
     window: [f64; FRAME_SIZE],
     outer_middle_ear: [f64; SPECTRUM_SIZE],
     mappings: [BandMapping; NUM_BANDS],
@@ -239,9 +243,6 @@ impl TwoFModel {
 
         Self {
             simd_level,
-            fft_input: fft.make_input_vec(),
-            fft_output: fft.make_output_vec(),
-            fft_scratch: fft.make_scratch_vec(),
             fft,
             window,
             outer_middle_ear,
@@ -263,10 +264,12 @@ impl TwoFModel {
     /// `AsRef<[f32]>`. Reference and degraded lengths may differ, matching
     /// PQevalAudio's zero-extension behavior.
     pub fn run<R: AsRef<[f32]>, D: AsRef<[f32]>>(
-        &mut self,
+        &self,
         reference: &[R],
         degraded: &[D],
     ) -> Result<TwoFResult, Error> {
+        let mut fft_buffers = FftBuffers::new(self.fft.as_ref());
+
         if reference.is_empty() || reference.len() > 2 || reference.len() != degraded.len() {
             return Err(Error::InvalidChannelCount {
                 reference: reference.len(),
@@ -311,6 +314,7 @@ impl TwoFModel {
                     degraded[channel].as_ref(),
                     processing_frame * HOP_SIZE,
                     &mut states[channel],
+                    &mut fft_buffers,
                 );
                 frame_movs.push(mov);
             }
@@ -361,14 +365,15 @@ impl TwoFModel {
     }
 
     fn process_frame(
-        &mut self,
+        &self,
         reference: &[f32],
         degraded: &[f32],
         offset: usize,
         state: &mut ChannelState,
+        fft_buffers: &mut FftBuffers,
     ) -> DetailedFrameMov {
-        let ref_spectrum = self.spectrum(reference, offset);
-        let deg_spectrum = self.spectrum(degraded, offset);
+        let ref_spectrum = self.spectrum(fft_buffers, reference, offset);
+        let deg_spectrum = self.spectrum(fft_buffers, degraded, offset);
         let excitation = [
             self.excitation(&ref_spectrum),
             self.excitation(&deg_spectrum),
@@ -425,19 +430,23 @@ impl TwoFModel {
         }
     }
 
-    fn spectrum(&mut self, samples: &[f32], offset: usize) -> [f64; SPECTRUM_SIZE] {
-        for i in 0..FRAME_SIZE {
-            self.fft_input[i] =
-                samples.get(offset + i).copied().unwrap_or(0.0) as f64 * self.window[i];
-        }
+    fn spectrum(
+        &self,
+        fft_buffers: &mut FftBuffers,
+        samples: &[f32],
+        offset: usize,
+    ) -> [f64; SPECTRUM_SIZE] {
+        let mut fft_input: [f64; FRAME_SIZE] = std::array::from_fn(|i| {
+            samples.get(offset + i).copied().unwrap_or(0.0) as f64 * self.window[i]
+        });
         self.fft
             .process_with_scratch(
-                &mut self.fft_input,
-                &mut self.fft_output,
-                &mut self.fft_scratch,
+                &mut fft_input,
+                &mut fft_buffers.output,
+                &mut fft_buffers.scratch,
             )
             .expect("preallocated real FFT buffers have the correct lengths");
-        std::array::from_fn(|i| self.fft_output[i].norm_sqr())
+        std::array::from_fn(|i| fft_buffers.output[i].norm_sqr())
     }
 
     fn excitation(&self, spectrum: &[f64; SPECTRUM_SIZE]) -> [f64; NUM_BANDS] {

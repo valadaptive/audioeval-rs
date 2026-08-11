@@ -30,16 +30,16 @@ fn analyze_parity() {
     let rust_spec = Zimtohrli::default().analyze(&signal);
     let cpp_spec = CppZimtohrli::default().analyze(&signal);
 
-    assert_eq!(rust_spec.num_steps, cpp_spec.num_steps());
-    assert_eq!(rust_spec.num_dims, cpp_spec.num_dims());
-    assert_eq!(rust_spec.values.len(), cpp_spec.values().len());
+    assert_eq!(rust_spec.num_steps(), cpp_spec.num_steps());
+    assert_eq!(rust_spec.num_dims(), cpp_spec.num_dims());
+    assert_eq!(rust_spec.values().len(), cpp_spec.values().len());
 
     let peak = rust_spec
-        .values
+        .values()
         .iter()
         .fold(0.0f32, |acc, v| acc.max(v.abs()));
     let max_abs_diff = rust_spec
-        .values
+        .values()
         .iter()
         .zip(cpp_spec.values())
         .fold(0.0f32, |acc, (a, b)| acc.max((a - b).abs()));

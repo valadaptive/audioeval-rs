@@ -17,15 +17,7 @@ use std::time::Duration;
 
 use benchmarks::load_corpus_sample;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use zimtohrli::{Spectrogram, Zimtohrli};
-
-fn clone_spec(spec: &Spectrogram) -> Spectrogram {
-    Spectrogram {
-        num_steps: spec.num_steps,
-        num_dims: spec.num_dims,
-        values: spec.values.clone(),
-    }
-}
+use zimtohrli::Zimtohrli;
 
 fn bench_zimtohrli(c: &mut Criterion) {
     let reference = &load_corpus_sample("ravel48_stereo.wav", 48000, Some(5)).channels[0];
@@ -48,14 +40,14 @@ fn bench_zimtohrli(c: &mut Criterion) {
 
     group.bench_function("distance_without_dtw/rust", |b| {
         b.iter_batched(
-            || (clone_spec(&rust_spec_ref), clone_spec(&rust_spec_deg)),
+            || (rust_spec_ref.clone(), rust_spec_deg.clone()),
             |(mut spec_a, mut spec_b)| rust.distance_without_dtw(&mut spec_a, &mut spec_b),
             BatchSize::SmallInput,
         )
     });
     group.bench_function("distance/rust", |b| {
         b.iter_batched(
-            || (clone_spec(&rust_spec_ref), clone_spec(&rust_spec_deg)),
+            || (rust_spec_ref.clone(), rust_spec_deg.clone()),
             |(mut spec_a, mut spec_b)| rust.distance(&mut spec_a, &mut spec_b),
             BatchSize::SmallInput,
         )

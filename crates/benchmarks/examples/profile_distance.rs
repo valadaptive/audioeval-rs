@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use zimtohrli::{Spectrogram, Zimtohrli};
+use zimtohrli::Zimtohrli;
 
 const SAMPLE_RATE: usize = 48_000;
 const SECONDS: usize = 5;
@@ -22,14 +22,6 @@ fn load(relative: &str) -> Vec<f32> {
         .join(relative);
     let file = audio_io::read_audio_file(&path, SAMPLE_RATE).unwrap();
     file.channels[0][..SAMPLE_RATE * SECONDS].to_vec()
-}
-
-fn clone_spec(spec: &Spectrogram) -> Spectrogram {
-    Spectrogram {
-        num_steps: spec.num_steps,
-        num_dims: spec.num_dims,
-        values: spec.values.clone(),
-    }
 }
 
 fn main() {
@@ -43,9 +35,7 @@ fn main() {
     let deadline = Instant::now() + std::time::Duration::from_secs(10);
     let mut iterations = 0u64;
     while Instant::now() < deadline {
-        std::hint::black_box(
-            z.distance_without_dtw(&mut clone_spec(&spec_a), &mut clone_spec(&spec_b)),
-        );
+        std::hint::black_box(z.distance_without_dtw(&mut spec_a.clone(), &mut spec_b.clone()));
         iterations += 1;
     }
     println!("{iterations} iterations");

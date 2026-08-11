@@ -37,15 +37,8 @@ fn main() -> Result<()> {
                 .value_parser(value_parser!(f32)),
         )
         .arg(
-            Arg::new("full_scale_sine_db")
-                .long("full_scale_sine_db")
-                .help("reference dB SPL for a sine signal of amplitude 1")
-                .default_value("80")
-                .value_parser(value_parser!(f32)),
-        )
-        .arg(
-            Arg::new("dtw_band_seconds")
-                .long("dtw_band_seconds")
+            Arg::new("dtw_band_radius")
+                .long("dtw_band_radius")
                 .help(
                     "restrict the DTW to time misalignments of at most this many seconds \
                      (much faster, but results are only reliable if the true misalignment \
@@ -83,12 +76,6 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    let full_scale_sine_db = *matches.get_one::<f32>("full_scale_sine_db").unwrap();
-    if full_scale_sine_db < 1.0 {
-        eprintln!("Full scale sine dB must be >= 1.");
-        std::process::exit(3);
-    }
-
     let perceptual_sample_rate = *matches.get_one::<f32>("perceptual_sample_rate").unwrap();
     let verbose = *matches.get_one::<bool>("verbose").unwrap();
     let output_zimtohrli_distance = *matches
@@ -120,12 +107,11 @@ fn main() -> Result<()> {
     print_file_info(&pretty_path_a, &audio_a);
 
     let dtw_band_radius = matches
-        .get_one::<f32>("dtw_band_seconds")
+        .get_one::<f32>("dtw_band_radius")
         .map(|&seconds| (seconds * perceptual_sample_rate).round() as usize);
 
     let z = Zimtohrli {
         perceptual_sample_rate,
-        full_scale_sine_db,
         dtw_band_radius,
         ..Default::default()
     };

@@ -248,7 +248,7 @@ fn main() -> anyhow::Result<()> {
     let default_perceptual_sample_rate = default_zimtohrli.perceptual_sample_rate;
     let default_perceptual_sample_rate_str = format!("{}", default_perceptual_sample_rate);
 
-    let matches = Command::new("zimtohrli-compare")
+    let matches = Command::new("audioeval-cli")
         .about("Compare audio files using perceptual metrics")
         .arg(
             Arg::new("input")
@@ -493,10 +493,9 @@ fn main() -> anyhow::Result<()> {
                 any_error |= any_file_err;
                 if output_csv {
                     for metrics in res {
-                        let _ = stdout.write_all(reference.as_os_str().as_encoded_bytes());
+                        stdout.write_all(reference.as_os_str().as_encoded_bytes())?;
                         write!(stdout, ",")?;
-                        let _ =
-                            stdout.write_all(metrics.degraded_path.as_os_str().as_encoded_bytes());
+                        stdout.write_all(metrics.degraded_path.as_os_str().as_encoded_bytes())?;
                         if use_2f {
                             write!(stdout, ",{}", OrBlank(metrics.two_f))?;
                         }
@@ -506,15 +505,14 @@ fn main() -> anyhow::Result<()> {
                         if use_visqol {
                             write!(stdout, ",{}", OrBlank(metrics.visqol))?;
                         }
-                        let _ = writeln!(stdout);
+                        writeln!(stdout)?;
                     }
                 } else {
                     write!(stdout, "Reference: ")?;
-                    let _ = stdout.write_all(reference.as_os_str().as_encoded_bytes());
+                    stdout.write_all(reference.as_os_str().as_encoded_bytes())?;
                     for metrics in res {
                         write!(stdout, "\n  Degraded: ")?;
-                        let _ =
-                            stdout.write_all(metrics.degraded_path.as_os_str().as_encoded_bytes());
+                        stdout.write_all(metrics.degraded_path.as_os_str().as_encoded_bytes())?;
                         if let Some(two_f) = metrics.two_f {
                             write!(stdout, "\n    2f: {}", two_f)?;
                         }
@@ -524,10 +522,10 @@ fn main() -> anyhow::Result<()> {
                         if let Some(visqol) = metrics.visqol {
                             write!(stdout, "\n    ViSQOL: {}", visqol)?;
                         }
-                        let _ = writeln!(stdout);
+                        writeln!(stdout)?;
                     }
                 }
-                let _ = stdout.flush();
+                stdout.flush()?;
             }
             Err(e) => {
                 if fail_fast {

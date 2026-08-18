@@ -12,6 +12,9 @@ use crate::audio_signal::AudioSignal;
 const MIN_FFT_SIZE: usize = 32;
 
 /// Unlike the C++ `FftManager`, we actually cache and reuse FFT plans.
+///
+/// We use a mutex here, rather than just making `Visqol` take `&mut self`, so
+/// that we can easily run multiple audio evaluations on multiple threads.
 #[derive(Default)]
 pub struct FftManager(Mutex<RealFftPlanner<f64>>);
 

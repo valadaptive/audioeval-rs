@@ -93,7 +93,8 @@
 //!
 //! If DTW is required, but conformance with the original C++ version is *not*, you may use the [`Zimtohrli::dtw_band_radius`] option to reduce the search radius considered during the DTW alignment step. This is an extension of the API exclusive to this crate.
 
-use fearless_simd::{Level, Simd, dispatch, f32x16, prelude::*};
+pub use fearless_simd::Level;
+use fearless_simd::{Simd, dispatch, f32x16, prelude::*};
 use libm::{cosf, expf, logf, pow, sinf};
 use std::{
     f32::{self, consts::PI},
@@ -470,7 +471,7 @@ impl ChunkedAnalyzer {
     /// Creates an analyzer using the metric's SIMD level and perceptual frame
     /// size.
     pub fn new(zimtohrli: &Zimtohrli) -> Self {
-        Self::with_options(zimtohrli.level, zimtohrli.samples_per_perceptual_block)
+        Self::with_options(zimtohrli.simd_level, zimtohrli.samples_per_perceptual_block)
     }
 
     fn with_options(level: Level, downsample: usize) -> Self {
@@ -1115,7 +1116,7 @@ fn dtw(
 /// Expected input: 48kHz mono audio with samples in range [-1, 1].
 pub struct Zimtohrli {
     /// SIMD feature level.
-    pub level: Level,
+    pub simd_level: Level,
     /// The window in perceptual_sample_rate time steps when compting the NSIM.
     pub nsim_step_window: usize,
     /// The window in channels when computing the NSIM.
@@ -1146,7 +1147,7 @@ impl Default for Zimtohrli {
         let samples_per_perceptual_block = (SAMPLE_RATE / high_gamma_band) as usize;
         let perceptual_sample_rate = SAMPLE_RATE / samples_per_perceptual_block as f32;
         Self {
-            level: Level::new(),
+            simd_level: Level::new(),
             nsim_step_window: 8,
             nsim_channel_window: 5,
             perceptual_sample_rate,
@@ -1237,7 +1238,7 @@ impl Zimtohrli {
         }
 
         Self::rescale_to_match_energy(spec_a, spec_b);
-        let time_pairs = dtw(self.level, spec_a, spec_b, self.dtw_band_radius);
+        let time_pairs = dtw(self.simd_level, spec_a, spec_b, self.dtw_band_radius);
         1.0 - nsim(
             spec_a,
             spec_b,

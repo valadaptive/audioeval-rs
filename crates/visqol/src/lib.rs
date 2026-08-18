@@ -59,6 +59,7 @@ mod svr;
 use std::borrow::Cow;
 
 pub use audio_signal::AudioSignal;
+pub use fearless_simd::Level;
 pub use lattice::LatticeModel;
 pub use nsim::PatchSimilarityResult;
 pub use svr::SvrModel;

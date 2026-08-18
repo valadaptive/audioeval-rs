@@ -39,7 +39,8 @@ use std::sync::Arc;
 
 use constants::{FC, FL, FU, NUM_BANDS};
 use fast_pow::{pow_03, pow_04, pow_005, pow_171332};
-use fearless_simd::{Level, dispatch, prelude::*};
+pub use fearless_simd::Level;
+use fearless_simd::{dispatch, prelude::*};
 use num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
 
@@ -165,7 +166,7 @@ impl Spreading {
 /// Construction precomputes the PEAQ filter-bank tables and FFT plan. The
 /// per-signal filter memories are reset by every call to [`run`](Self::run).
 pub struct TwoFModel {
-    simd_level: Level,
+    pub simd_level: Level,
     fft: Arc<dyn RealToComplex<f64>>,
     window: [f64; FRAME_SIZE],
     outer_middle_ear: [f64; SPECTRUM_SIZE],

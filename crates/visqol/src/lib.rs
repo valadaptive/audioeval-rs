@@ -169,7 +169,7 @@ pub struct Visqol {
     mapper: SimilarityToQualityMapper,
     fft_manager: FftManager,
     speech_mode: bool,
-    simd_level: fearless_simd::Level,
+    pub simd_level: fearless_simd::Level,
     /// How many patch-lengths on either side of a reference patch's position
     /// the matching search may look.
     pub search_window_radius: usize,

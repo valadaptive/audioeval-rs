@@ -1,7 +1,7 @@
 //! A pure-Rust port of Google's [Zimtohrli](https://github.com/google/zimtohrli), a perceptual audio evaluation metric.
 //!
 //! ```no_run
-//! use zimtohrli::Zimtohrli;
+//! use audioeval_zimtohrli::Zimtohrli;
 //!
 //! // This should be 48kHz PCM audio in [-1, 1]. If your audio is not 48kHz, you must resample it. Zimtohrli is not amplitude-invariant.
 //! let reference: &[f32];
@@ -32,7 +32,7 @@
 //! signal in memory:
 //!
 //! ```no_run
-//! use zimtohrli::{Spectrogram, Zimtohrli};
+//! use audioeval_zimtohrli::{Spectrogram, Zimtohrli};
 //!
 //! let chunks: &[&[f32]] = &[&[0.0; 1024], &[0.0; 1024]];
 //! let zimt = Zimtohrli::default();
@@ -53,7 +53,7 @@
 //! Zimtohrli does not contain any binaural metrics. The Zimtohrli CLI handles stereo/multichannel audio by evaluating each channel's distance separately, and computing the root-mean-squared distance:
 //!
 //! ```no_run
-//! # use zimtohrli::Zimtohrli;
+//! # use audioeval_zimtohrli::Zimtohrli;
 //!
 //! let reference: &[&[f32]];
 //! let degraded: &[&[f32]];

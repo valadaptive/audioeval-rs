@@ -1,4 +1,4 @@
-# two-f-model
+# audioeval-2f
 
 <!-- This README is generated via https://crates.io/crates/cargo-rdme. Edit the crate-level docs and regenerate this README via `cargo rdme`. -->
 
@@ -9,7 +9,7 @@ A pure-Rust implementation of the SEBASS 2f-model for estimating the perceived q
 The model uses only two PEAQ Basic model output variables: `AvgModDiff1` and `ADB`. Their implementation follows Peter Kabal's PQevalAudio v1r0, which is the PEAQ implementation for which the published 2f-model parameters were fitted.
 
 ```rust
-use two_f_model::TwoFModel;
+use audioeval_2f::TwoFModel;
 
 let reference: Vec<Vec<f32>> = vec![vec![0.0; 48_000]; 2];
 let degraded = reference.clone();

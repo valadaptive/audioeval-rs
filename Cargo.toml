@@ -4,7 +4,7 @@ members = [
     "crates/audioeval-cli",
     "crates/audio-io",
     "crates/benchmarks",
-    "crates/two-f-model",
+    "crates/2f",
     "crates/visqol",
     "crates/visqol-compare",
     "crates/visqol-cpp",
@@ -15,10 +15,10 @@ members = [
 
 [workspace.dependencies]
 audio-io = { path = "crates/audio-io" }
-two-f-model = { path = "crates/two-f-model" }
-visqol = { path = "crates/visqol" }
+audioeval-2f = { path = "crates/2f" }
+audioeval-visqol = { path = "crates/visqol" }
 visqol-cpp = { path = "crates/visqol-cpp" }
-zimtohrli = { path = "crates/zimtohrli" }
+audioeval-zimtohrli = { path = "crates/zimtohrli" }
 zimtohrli-cpp = { path = "crates/zimtohrli-cpp" }
 
 anyhow = "1.0.103"
@@ -38,9 +38,11 @@ debug = "full"
 
 # The metric conformance tests process substantial amounts of audio; keep the
 # DSP optimized even in dev/test builds.
-[profile.dev.package.visqol]
+[profile.dev.package.audioeval-visqol]
 opt-level = 2
-[profile.dev.package.two-f-model]
+[profile.dev.package.audioeval-2f]
+opt-level = 2
+[profile.dev.package.audioeval-zimtohrli]
 opt-level = 2
 [profile.dev.package.realfft]
 opt-level = 2

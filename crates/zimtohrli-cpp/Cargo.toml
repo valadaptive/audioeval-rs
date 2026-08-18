@@ -10,7 +10,7 @@ links = "zimtohrli_cpp"
 cc = "1.2.19"
 
 [dev-dependencies]
-zimtohrli.workspace = true
+audioeval-zimtohrli.workspace = true
 
 [lints]
 workspace = true

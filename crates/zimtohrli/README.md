@@ -7,7 +7,7 @@
 A pure-Rust port of Google's [Zimtohrli](https://github.com/google/zimtohrli), a perceptual audio evaluation metric.
 
 ```rust
-use zimtohrli::Zimtohrli;
+use audioeval_zimtohrli::Zimtohrli;
 
 // This should be 48kHz PCM audio in [-1, 1]. If your audio is not 48kHz, you must resample it. Zimtohrli is not amplitude-invariant.
 let reference: &[f32];
@@ -36,7 +36,7 @@ Audio can also be analyzed incrementally without retaining the whole PCM
 signal in memory:
 
 ```rust
-use zimtohrli::{Spectrogram, Zimtohrli};
+use audioeval_zimtohrli::{Spectrogram, Zimtohrli};
 
 let chunks: &[&[f32]] = &[&[0.0; 1024], &[0.0; 1024]];
 let zimt = Zimtohrli::default();
@@ -91,6 +91,6 @@ Some rough benchmarks on my Ryzen 7 7700X put this crate around 30-35% faster th
 
 The original C++ code does not perform any runtime CPU feature detection, whereas this crate does. When benchmarking, the original code was compiled with `-march=x86-64-v3`. For some reason, `x86-64-v4` was slower.
 
-If DTW is required, but conformance with the original C++ version is *not*, you may use the [`Zimtohrli::dtw_band_radius`](https://docs.rs/zimtohrli/latest/zimtohrli/struct.Zimtohrli.html#structfield.dtw_band_radius) option to reduce the search radius considered during the DTW alignment step. This is an extension of the API exclusive to this crate.
+If DTW is required, but conformance with the original C++ version is *not*, you may use the [`Zimtohrli::dtw_band_radius`](https://docs.rs/audioeval-zimtohrli/latest/audioeval_zimtohrli/struct.Zimtohrli.html#structfield.dtw_band_radius) option to reduce the search radius considered during the DTW alignment step. This is an extension of the API exclusive to this crate.
 
 <!-- cargo-rdme end -->

@@ -1,4 +1,4 @@
-# visqol
+# audioeval-visqol
 
 <!-- This README is generated via https://crates.io/crates/cargo-rdme. Edit the crate-level docs and regenerate this README via `cargo rdme`. -->
 
@@ -7,7 +7,7 @@
 A fast, pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3.3, an objective, full-reference metric for perceived audio quality.
 
 ```rust
-use visqol::{AudioSignal, Visqol};
+use audioeval_visqol::{AudioSignal, Visqol};
 
 let reference = AudioSignal::new(ref_samples, 48000);
 let degraded = AudioSignal::new(deg_samples, 48000);
@@ -16,9 +16,9 @@ println!("MOS-LQO: {}", result.moslqo);
 ```
 
 The entry points you're most likely to want are:
-- [`Visqol::audio()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.audio): for general audio (ViSQOL's default behavior). This expects 48kHz input.
-- [`Visqol::speech_lattice()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_lattice): for speech (like ViSQOL with `use_speech_scoring` enabled). This expects 16kHz input.
-- [`Visqol::speech_legacy()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_legacy): for speech, using the older non-lattice model (like ViSQOL with `use_speech_scoring` enabled, but `use_lattice_model` explicitly disabled). This also expects 16kHz input.
+- [`Visqol::audio()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.audio): for general audio (ViSQOL's default behavior). This expects 48kHz input.
+- [`Visqol::speech_lattice()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.speech_lattice): for speech (like ViSQOL with `use_speech_scoring` enabled). This expects 16kHz input.
+- [`Visqol::speech_legacy()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.speech_legacy): for speech, using the older non-lattice model (like ViSQOL with `use_speech_scoring` enabled, but `use_lattice_model` explicitly disabled). This also expects 16kHz input.
 
 The inputs are expected to be mono signals. You may use `AudioSignal::from_channels` to downmix by averaging, as with the C++ version.
 
@@ -28,11 +28,11 @@ This crate will *not* resample your audio for you. You must use something like [
 
 Here's where each `VisqolConfig.options` field lands:
 
-- `use_speech_scoring` + `use_lattice_model`: Choose a constructor. [`Visqol::audio()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.audio) (audio, SVR), [`Visqol::speech_lattice()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_lattice) (speech, lattice), or [`Visqol::speech_legacy()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_legacy) (speech, exponential fit).
-- `use_unscaled_speech_mos_mapping`: Passed as a `bool` argument to [`Visqol::speech_legacy()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.speech_legacy).
-- `svr_model_path`: [`Visqol::audio_with_model()`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#method.audio_with_model), which is passed an [`SvrModel`](https://docs.rs/visqol/latest/visqol/svr/struct.SvrModel.html). You may load one via [`SvrModel::from_text()`](https://docs.rs/visqol/latest/visqol/svr/struct.SvrModel.html#method.from_text).
-- `search_window_radius`: [`Visqol::search_window_radius`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#structfield.search_window_radius).
-- `allow_unsupported_sample_rates`: [`Visqol::allow_unsupported_sample_rates`](https://docs.rs/visqol/latest/visqol/struct.Visqol.html#structfield.allow_unsupported_sample_rates).
+- `use_speech_scoring` + `use_lattice_model`: Choose a constructor. [`Visqol::audio()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.audio) (audio, SVR), [`Visqol::speech_lattice()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.speech_lattice) (speech, lattice), or [`Visqol::speech_legacy()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.speech_legacy) (speech, exponential fit).
+- `use_unscaled_speech_mos_mapping`: Passed as a `bool` argument to [`Visqol::speech_legacy()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.speech_legacy).
+- `svr_model_path`: [`Visqol::audio_with_model()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#method.audio_with_model), which is passed an [`SvrModel`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/svr/struct.SvrModel.html). You may load one via [`SvrModel::from_text()`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/svr/struct.SvrModel.html#method.from_text).
+- `search_window_radius`: [`Visqol::search_window_radius`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#structfield.search_window_radius).
+- `allow_unsupported_sample_rates`: [`Visqol::allow_unsupported_sample_rates`](https://docs.rs/audioeval-visqol/latest/audioeval_visqol/struct.Visqol.html#structfield.allow_unsupported_sample_rates).
 - `output_mos_score` + `detect_voice_activity`: Not supported. Even in the original C++ version, these are unimplemented no-ops.
 
 ### Conformance
@@ -45,6 +45,8 @@ Results will likely not be *bit-identical* across machines due to potential roun
 
 ### Performance
 
-This crate is significantly faster than the original C++ implementation of ViSQOL: around **40x faster** in audio mode, and **30-35x faster** in speech mode. The original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
+This crate is significantly faster than the original C++ implementation of ViSQOL: around **40x faster** in audio mode, and **30-35x faster** in speech mode.
+
+I am aware that the performance improvement seems unusually large, and if anybody . The original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
 
 <!-- cargo-rdme end -->

@@ -1,4 +1,4 @@
-use zimtohrli::Zimtohrli;
+use audioeval_zimtohrli::Zimtohrli;
 
 /// A test signal with enough time structure that DTW alignment matters:
 /// a chirp whose frequency wobbles.

@@ -1,7 +1,7 @@
 //! A fast, pure-Rust port of [ViSQOL](https://github.com/google/visqol) v3.3, an objective, full-reference metric for perceived audio quality.
 //!
 //! ```ignore
-//! use visqol::{AudioSignal, Visqol};
+//! use audioeval_visqol::{AudioSignal, Visqol};
 //!
 //! let reference = AudioSignal::new(ref_samples, 48000);
 //! let degraded = AudioSignal::new(deg_samples, 48000);

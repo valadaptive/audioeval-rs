@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use zimtohrli::Zimtohrli;
+use audioeval_zimtohrli::Zimtohrli;
 
 const SAMPLE_RATE: usize = 48_000;
 const SECONDS: usize = 5;

@@ -1,6 +1,6 @@
 use std::{env, path::Path};
 
-use two_f_model::TwoFModel;
+use audioeval_2f::TwoFModel;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args_os().skip(1);

@@ -20,7 +20,7 @@
 
 use std::path::PathBuf;
 
-use visqol::{AudioSignal, Visqol};
+use audioeval_visqol::{AudioSignal, Visqol};
 use visqol_cpp::{CppVisqol, default_lattice_model_path, default_svr_model_path};
 
 /// Loads a file from the upstream testdata directory, downmixed to mono f64

@@ -9,7 +9,7 @@ links = "visqol_capi"
 
 [dev-dependencies]
 audio-io.workspace = true
-visqol.workspace = true
+audioeval-visqol.workspace = true
 
 [lints]
 workspace = true

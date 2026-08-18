@@ -3,14 +3,14 @@
 //! The model uses only two PEAQ Basic model output variables: `AvgModDiff1` and `ADB`. Their implementation follows Peter Kabal's PQevalAudio v1r0, which is the PEAQ implementation for which the published 2f-model parameters were fitted.
 //!
 //! ```no_run
-//! use two_f_model::TwoFModel;
+//! use audioeval_2f::TwoFModel;
 //!
 //! let reference: Vec<Vec<f32>> = vec![vec![0.0; 48_000]; 2];
 //! let degraded = reference.clone();
 //! let mut model = TwoFModel::new();
 //! let result = model.run(&reference, &degraded)?;
 //! println!("estimated MUSHRA score: {}", result.mushra_score);
-//! # Ok::<(), two_f_model::Error>(())
+//! # Ok::<(), audioeval_2f::Error>(())
 //! ```
 //!
 //! Input samples are normalized PCM in `[-1, 1]`. Only 48 kHz mono or stereo signals are supported. The signals must already be time-aligned.

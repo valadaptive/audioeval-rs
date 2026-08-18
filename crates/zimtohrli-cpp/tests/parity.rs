@@ -2,12 +2,12 @@
 //!
 //! The Rust implementation is a reimplementation (different floating-point
 //! operation order, fast pow approximation, runtime SIMD dispatch), so
-//! bitwise equality is not expected — but results should agree closely. Run
+//! bitwise equality is not expected, but results should agree closely. Run
 //! with output to see the observed differences:
 //!
 //!   cargo test -p zimtohrli-cpp -- --nocapture
 
-use zimtohrli::Zimtohrli;
+use audioeval_zimtohrli::Zimtohrli;
 use zimtohrli_cpp::CppZimtohrli;
 
 const SAMPLE_RATE: usize = 48_000;

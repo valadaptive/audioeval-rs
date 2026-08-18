@@ -1,4 +1,4 @@
-use zimtohrli::{NUM_CHANNELS, Spectrogram, Zimtohrli};
+use audioeval_zimtohrli::{NUM_CHANNELS, Spectrogram, Zimtohrli};
 
 fn signal(num_samples: usize) -> Vec<f32> {
     (0..num_samples)

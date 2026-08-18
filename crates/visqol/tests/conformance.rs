@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use visqol::{AudioSignal, Visqol};
+use audioeval_visqol::{AudioSignal, Visqol};
 
 /// C++ conformance tolerance.
 const TOLERANCE: f64 = 0.0001;

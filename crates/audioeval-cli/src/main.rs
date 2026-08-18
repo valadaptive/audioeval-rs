@@ -11,9 +11,9 @@ use clap::{
     builder::{BoolishValueParser, PossibleValue},
     value_parser,
 };
-use two_f_model::TwoFModel;
-use visqol::{AudioSignal, SvrModel, Visqol};
-use zimtohrli::Zimtohrli;
+use audioeval_2f::TwoFModel;
+use audioeval_visqol::{AudioSignal, SvrModel, Visqol};
+use audioeval_zimtohrli::Zimtohrli;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Metric {
@@ -244,7 +244,7 @@ fn run_one<'a>(
 }
 
 fn main() -> anyhow::Result<()> {
-    let default_zimtohrli = zimtohrli::Zimtohrli::default();
+    let default_zimtohrli = Zimtohrli::default();
     let default_perceptual_sample_rate = default_zimtohrli.perceptual_sample_rate;
     let default_perceptual_sample_rate_str = format!("{}", default_perceptual_sample_rate);
 

@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use anyhow::{Result, anyhow};
 use audio_io::AudioFile;
 use clap::{Arg, ArgAction, Command, value_parser};
-use zimtohrli::{Spectrogram, Zimtohrli};
+use audioeval_zimtohrli::{Spectrogram, Zimtohrli};
 
 fn main() -> Result<()> {
-    let default_zimtohrli = zimtohrli::Zimtohrli::default();
+    let default_zimtohrli = Zimtohrli::default();
     let default_perceptual_sample_rate = default_zimtohrli.perceptual_sample_rate;
     let default_perceptual_sample_rate_str = format!("{}", default_perceptual_sample_rate);
 

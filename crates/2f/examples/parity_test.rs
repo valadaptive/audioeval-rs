@@ -8,7 +8,7 @@
 
 use std::{env, fs, path::PathBuf};
 
-use two_f_model::TwoFModel;
+use audioeval_2f::TwoFModel;
 
 fn main() {
     let argv = env::args_os().collect::<Vec<_>>();

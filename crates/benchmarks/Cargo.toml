@@ -13,9 +13,9 @@ audio-io.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-two-f-model.workspace = true
-visqol.workspace = true
-zimtohrli.workspace = true
+audioeval-2f.workspace = true
+audioeval-visqol.workspace = true
+audioeval-zimtohrli.workspace = true
 
 [features]
 default = []

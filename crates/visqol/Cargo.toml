@@ -1,8 +1,10 @@
 [package]
-name = "visqol"
+name = "audioeval-visqol"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
+description = "Pure-Rust implementation of ViSQOL v3.3"
+repository = "https://github.com/valadaptive/audioeval-rs"
 
 [dependencies]
 num-complex.workspace = true

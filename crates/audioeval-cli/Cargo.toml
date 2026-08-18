@@ -9,9 +9,9 @@ anyhow.workspace = true
 audio-io.workspace = true
 clap = { workspace = true, features = ["string"] }
 
-two-f-model.workspace = true
-visqol.workspace = true
-zimtohrli.workspace = true
+audioeval-2f.workspace = true
+audioeval-visqol.workspace = true
+audioeval-zimtohrli.workspace = true
 
 [lints]
 workspace = true

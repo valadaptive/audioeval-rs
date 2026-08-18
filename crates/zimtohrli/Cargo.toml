@@ -1,8 +1,10 @@
 [package]
-name = "zimtohrli"
+name = "audioeval-zimtohrli"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
+description = "Pure-Rust implementation of the Zimtohrli audio metric"
+repository = "https://github.com/valadaptive/audioeval-rs"
 
 [dependencies]
 fearless_simd.workspace = true

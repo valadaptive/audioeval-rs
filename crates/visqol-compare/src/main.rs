@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
-use clap::{Arg, ArgAction, Command, value_parser};
 use audioeval_visqol::{AudioSignal, SvrModel, Visqol};
+use clap::{Arg, ArgAction, Command, value_parser};
 
 fn main() -> Result<()> {
     let matches = Command::new("visqol-compare")

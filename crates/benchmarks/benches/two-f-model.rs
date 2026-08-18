@@ -1,8 +1,8 @@
 use std::hint::black_box;
 
+use audioeval_2f::TwoFModel;
 use benchmarks::load_corpus_sample;
 use criterion::{Criterion, criterion_group, criterion_main};
-use audioeval_2f::TwoFModel;
 
 fn bench_two_f(c: &mut Criterion) {
     let model = TwoFModel::new();

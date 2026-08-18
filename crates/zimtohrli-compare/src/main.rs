@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use audio_io::AudioFile;
-use clap::{Arg, ArgAction, Command, value_parser};
 use audioeval_zimtohrli::{Spectrogram, Zimtohrli};
+use clap::{Arg, ArgAction, Command, value_parser};
 
 fn main() -> Result<()> {
     let default_zimtohrli = Zimtohrli::default();

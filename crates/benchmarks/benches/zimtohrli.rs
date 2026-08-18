@@ -15,9 +15,9 @@
 use std::hint::black_box;
 use std::time::Duration;
 
+use audioeval_zimtohrli::Zimtohrli;
 use benchmarks::load_corpus_sample;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use audioeval_zimtohrli::Zimtohrli;
 
 fn bench_zimtohrli(c: &mut Criterion) {
     let reference = &load_corpus_sample("ravel48_stereo.wav", 48000, Some(5)).channels[0];

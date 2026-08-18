@@ -13,9 +13,9 @@
 use std::hint::black_box;
 use std::time::Duration;
 
+use audioeval_visqol::{AudioSignal, Visqol};
 use benchmarks::load_corpus_sample;
 use criterion::{Criterion, criterion_group, criterion_main};
-use audioeval_visqol::{AudioSignal, Visqol};
 
 const SECONDS: usize = 5;
 

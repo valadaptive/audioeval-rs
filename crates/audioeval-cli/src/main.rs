@@ -6,14 +6,14 @@ use std::{
 
 use anyhow::{Context as _, Result, anyhow};
 use audio_io::read_audio_file;
+use audioeval_2f::TwoFModel;
+use audioeval_visqol::{AudioSignal, SvrModel, Visqol};
+use audioeval_zimtohrli::Zimtohrli;
 use clap::{
     Arg, ArgAction, Command, ValueEnum,
     builder::{BoolishValueParser, PossibleValue},
     value_parser,
 };
-use audioeval_2f::TwoFModel;
-use audioeval_visqol::{AudioSignal, SvrModel, Visqol};
-use audioeval_zimtohrli::Zimtohrli;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Metric {

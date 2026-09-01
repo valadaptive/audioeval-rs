@@ -194,7 +194,7 @@ fn run_one<'a>(
                     Ok(res) => Some(res),
                     Err(e) => {
                         if fail_fast {
-                            return Err(e.into());
+                            return Err(e);
                         }
                         eprintln!("{:#}", e);
                         any_error = true;

@@ -47,6 +47,6 @@ Results will likely not be *bit-identical* across machines due to potential roun
 
 This crate is significantly faster than the original C++ implementation of ViSQOL: around **40x faster** in audio mode, and **30-35x faster** in speech mode.
 
-I am aware that the performance improvement seems unusually large, and if anybody . The original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
+I am aware that the performance improvement seems unusually large, and if anybody wants to run their own benchmarks to double-check this figure, feel free to do so. I'm pretty sure that the figures check out, though--the original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
 
 <!-- cargo-rdme end -->

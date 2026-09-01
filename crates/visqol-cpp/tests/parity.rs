@@ -26,7 +26,7 @@ use visqol_cpp::{CppVisqol, default_lattice_model_path, default_svr_model_path};
 /// Loads a file from the upstream testdata directory, downmixed to mono f64
 /// exactly once, so both implementations see identical input. `rate`
 /// resamples; `None` keeps the file's native rate.
-fn load_mono(relative: &str, rate: Option<u32>) -> (Vec<f64>, u32) {
+fn load_mono(relative: &str, rate: Option<u32>) -> (AudioSignal<'static>, u32) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../visqol/testdata")
         .join(relative);
@@ -39,10 +39,7 @@ fn load_mono(relative: &str, rate: Option<u32>) -> (Vec<f64>, u32) {
         None => audio_io::read_audio_file_native(&path).unwrap(),
     };
     let rate = rate.unwrap_or(file.src_sample_rate as u32);
-    (
-        AudioSignal::from_channels(&file.channels, rate).samples,
-        rate,
-    )
+    (AudioSignal::from_channels(&file.channels, rate), rate)
 }
 
 /// Runs both implementations over the same signals and asserts their results
@@ -51,18 +48,15 @@ fn assert_parity(
     mode: &str,
     rust: &Visqol,
     cpp: &mut CppVisqol,
-    reference: &[f64],
-    degraded: &[f64],
+    reference: &AudioSignal,
+    degraded: &AudioSignal,
     sample_rate: u32,
     moslqo_tolerance: f64,
 ) {
-    let rust_result = rust
-        .run(
-            &AudioSignal::new(reference.to_vec(), sample_rate),
-            &AudioSignal::new(degraded.to_vec(), sample_rate),
-        )
+    let rust_result = rust.run(reference, degraded).unwrap();
+    let cpp_result = cpp
+        .run(&reference.samples, &degraded.samples, sample_rate)
         .unwrap();
-    let cpp_result = cpp.run(reference, degraded, sample_rate).unwrap();
 
     println!(
         "[{mode}] moslqo: rust = {}, cpp = {}",

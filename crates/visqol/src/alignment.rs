@@ -126,59 +126,65 @@ fn find_lowest_lag_index(fft_manager: &FftManager, signal_1: &[f64], signal_2: &
     best_index as i64 - max_lag as i64
 }
 
-/// Aligns the degraded signal to the reference in place by cross-correlating
-/// their upper envelopes. Returns the lag in seconds (positive when the
-/// degraded signal was delayed / zero-padded).
-pub fn globally_align(
+/// Aligns the degraded signal to the reference by cross-correlating their
+/// upper envelopes. Returns the aligned signal and its lag in seconds
+/// (positive when the degraded signal was delayed / zero-padded).
+pub fn globally_align<'d>(
     fft_manager: &FftManager,
     reference: &AudioSignal,
-    degraded: &mut AudioSignal,
-) -> f64 {
+    degraded: &'d AudioSignal,
+) -> (AudioSignal<'d>, f64) {
     let ref_env = calc_upper_env(fft_manager, &reference.samples);
     let deg_env = calc_upper_env(fft_manager, &degraded.samples);
     let best_lag = find_lowest_lag_index(fft_manager, &ref_env, &deg_env);
 
     // Limit the lag to half the reference duration.
     if best_lag == 0 || best_lag.unsigned_abs() as f64 > reference.samples.len() as f64 / 2.0 {
-        return 0.0;
+        return (degraded.as_borrowed(), 0.0);
     }
+
+    let lag_sec = best_lag as f64 / degraded.sample_rate as f64;
 
     if best_lag < 0 {
         // Degraded leads the reference: truncate its start.
-        degraded.samples.drain(..best_lag.unsigned_abs() as usize);
+        (degraded.slice(best_lag.unsigned_abs() as usize..), lag_sec)
     } else {
         // Degraded trails the reference: prepend zeros.
         let zeros = best_lag as usize;
-        let old_len = degraded.samples.len();
-        degraded.samples.resize(old_len + zeros, 0.0);
-        degraded.samples.copy_within(..old_len, zeros);
-        degraded.samples[..zeros].fill(0.0);
+        let mut samples = Vec::with_capacity(zeros + degraded.samples.len());
+        samples.resize(zeros, 0.0);
+        samples.extend_from_slice(&degraded.samples);
+        (AudioSignal::new(samples, degraded.sample_rate), lag_sec)
     }
-    best_lag as f64 / degraded.sample_rate as f64
 }
 
-/// Aligns the two signals in place and truncates them to matching lengths,
-/// used for per-patch fine alignment. Returns the lag in seconds.
-pub fn align_and_truncate(
+/// Aligns the two signals and truncates them to matching lengths, used for
+/// per-patch fine alignment. Returns both aligned signals and the lag in
+/// seconds.
+pub fn align_and_truncate<'r, 'd>(
     fft_manager: &FftManager,
-    reference: &mut AudioSignal,
-    degraded: &mut AudioSignal,
-) -> f64 {
-    let lag = globally_align(fft_manager, reference, degraded);
+    reference: &'r AudioSignal,
+    degraded: &'d AudioSignal,
+) -> (AudioSignal<'r>, AudioSignal<'d>, f64) {
+    let (degraded, lag) = globally_align(fft_manager, reference, degraded);
     let ref_len = reference.samples.len();
     let deg_len = degraded.samples.len();
 
+    let ref_rate = reference.sample_rate as f64;
     if ref_len > deg_len {
-        reference.samples.truncate(deg_len);
+        (reference.slice(..deg_len), degraded, lag)
     } else if ref_len < deg_len {
         // For positive lag the start of the reference is now aligned with the
         // zeros prepended to the degraded signal; truncate that amount from
         // both. (lag is always >= 0 on this branch: negative lag shortens the
         // degraded signal, so it cannot exceed an equal-length reference.)
-        let start = ((lag * reference.sample_rate as f64) as i64).max(0) as usize;
-        reference.samples.drain(..start);
-        degraded.samples.truncate(ref_len);
-        degraded.samples.drain(..start);
+        let start = ((lag * ref_rate) as i64).max(0) as usize;
+        (
+            reference.slice(start..),
+            degraded.into_slice(start..ref_len),
+            lag,
+        )
+    } else {
+        (reference.as_borrowed(), degraded, lag)
     }
-    lag
 }

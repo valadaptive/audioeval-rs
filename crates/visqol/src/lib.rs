@@ -41,7 +41,7 @@
 //!
 //! This crate is significantly faster than the original C++ implementation of ViSQOL: around **40x faster** in audio mode, and **30-35x faster** in speech mode.
 //!
-//! I am aware that the performance improvement seems unusually large, and if anybody . The original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
+//! I am aware that the performance improvement seems unusually large, and if anybody wants to run their own benchmarks to double-check this figure, feel free to do so. I'm pretty sure that the figures check out, though--the original codebase doesn't seem to have undergone any optimization effort, whereas this codebase has.
 
 mod alignment;
 mod analysis_window;
@@ -276,11 +276,10 @@ impl Visqol {
             });
         }
 
-        let mut deg_signal = deg_signal.clone();
-        let alignment_lag_s = if self.disable_global_alignment {
-            0.0
+        let (mut deg_signal, alignment_lag_s) = if self.disable_global_alignment {
+            (deg_signal.as_borrowed(), 0.0)
         } else {
-            alignment::globally_align(&self.fft_manager, ref_signal, &mut deg_signal)
+            alignment::globally_align(&self.fft_manager, ref_signal, deg_signal)
         };
 
         let window = AnalysisWindow::new(ref_signal.sample_rate, OVERLAP);

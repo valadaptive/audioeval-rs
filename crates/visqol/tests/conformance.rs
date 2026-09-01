@@ -23,7 +23,7 @@ fn testdata(relative: &str) -> PathBuf {
     path
 }
 
-fn load(relative: &str) -> AudioSignal {
+fn load(relative: &str) -> AudioSignal<'static> {
     let path = testdata(relative);
     let file = audio_io::read_audio_file_native(&path).unwrap();
     AudioSignal::from_channels(&file.channels, file.src_sample_rate as u32)

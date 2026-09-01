@@ -2,6 +2,7 @@
 //! DTW-style dynamic program, plus the per-patch time-domain fine
 //! realignment. A port of `comparison_patches_selector.cc`.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use fearless_simd::Level;
@@ -207,25 +208,32 @@ fn build_degraded_patch(
 
 /// Extracts `[start_time, end_time)` seconds of audio, zero-padding out-of
 /// range regions. Like the C++, the padding is prepended in both cases.
-fn slice(signal: &AudioSignal, start_time: f64, end_time: f64) -> AudioSignal {
+fn slice<'s>(signal: &'s AudioSignal, start_time: f64, end_time: f64) -> AudioSignal<'s> {
     let sample_rate = signal.sample_rate as f64;
     let num_samples = signal.samples.len();
     let start_index = ((start_time * sample_rate) as i64).max(0) as usize;
     let end_index = ((end_time * sample_rate) as i64).min(num_samples as i64 - 1) as usize;
-    let mut samples = signal.samples[start_index..end_index].to_vec();
+    let mut samples = Cow::Borrowed(&signal.samples[start_index..end_index]);
 
     // Add silence for a patch running past the end of the degraded signal...
     let end_time_diff = end_time * sample_rate - num_samples as f64;
     if end_time_diff > 0.0 {
-        let mut padded = vec![0.0; end_time_diff as usize];
-        padded.append(&mut samples);
-        samples = padded;
+        // This appears to be a bug in the C++ original. It *should* add
+        // post-silence but instead adds pre-silence. Unfortunately I think we
+        // need to faithfully reproduce this bug for parity.
+        let padding = end_time_diff as usize;
+        let mut padded = Vec::with_capacity(padding + samples.len());
+        padded.resize(padding, 0.0);
+        padded.extend_from_slice(&samples);
+        samples = Cow::Owned(padded);
     }
     // ...or before its start.
     if start_time < 0.0 {
-        let mut padded = vec![0.0; (-start_time * sample_rate) as usize];
-        padded.append(&mut samples);
-        samples = padded;
+        let padding = (-start_time * sample_rate) as usize;
+        let mut padded = Vec::with_capacity(padding + samples.len());
+        padded.resize(padding, 0.0);
+        padded.extend_from_slice(&samples);
+        samples = Cow::Owned(padded);
     }
     AudioSignal::new(samples, signal.sample_rate)
 }
@@ -250,18 +258,18 @@ pub fn finely_align_and_recreate_patches(
             continue;
         }
 
-        let mut ref_patch_audio = slice(
+        let ref_patch_audio = slice(
             ref_signal,
             sim_result.ref_patch_start_time,
             sim_result.ref_patch_end_time,
         );
-        let mut deg_patch_audio = slice(
+        let deg_patch_audio = slice(
             deg_signal,
             sim_result.deg_patch_start_time,
             sim_result.deg_patch_end_time,
         );
-        let lag =
-            alignment::align_and_truncate(fft_manager, &mut ref_patch_audio, &mut deg_patch_audio);
+        let (ref_patch_audio, deg_patch_audio, lag) =
+            alignment::align_and_truncate(fft_manager, &ref_patch_audio, &deg_patch_audio);
         let new_ref_duration = ref_patch_audio.duration();
         let new_deg_duration = deg_patch_audio.duration();
 

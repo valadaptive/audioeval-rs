@@ -131,7 +131,6 @@ fn read_audio_file_inner(path: &Path, rate: Option<usize>) -> Result<AudioFile> 
         src_rate,
         rate,
         1024,
-        2,
         num_channels,
         rubato::FixedSync::Both,
     )?;

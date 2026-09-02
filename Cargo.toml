@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/audioeval-cli",
     "crates/audio-io",
@@ -25,13 +25,16 @@ anyhow = "1.0.103"
 clap = "4.6.1"
 criterion = "0.8.2"
 symphonia = "0.6"
-rubato = "3.0.0"
-audioadapter = "3.0.0"
-audioadapter-buffers = "3.0.0"
+rubato = "5.0.0"
+audioadapter = "5.0.0"
+audioadapter-buffers = "5.0.0"
 libm = "0.2.16"
 num-complex = "0.4"
 realfft = "3.5"
-fearless_simd = "0.6.0"
+fearless_simd = "0.7.0"
+
+[workspace.lints]
+clippy.excessive_precision = "allow"
 
 [profile.release]
 debug = "full"
@@ -48,6 +51,3 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.rustfft]
 opt-level = 2
-
-[workspace.lints]
-clippy.excessive_precision = "allow"
